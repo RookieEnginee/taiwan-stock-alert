@@ -526,44 +526,53 @@ let currentMarket = 'TSE';   // 'TSE' or 'OTC'
 
 async function acLoadList() {
   if (stockList !== null) return;
-  stockList = [];  // mark as loading
+  stockList = [];  // 標記「載入中」，避免重複呼叫
   const dd = document.getElementById('acDropdown');
   dd.innerHTML = '<div class="ac-loading">載入股票清單中…</div>';
   dd.classList.add('open');
 
-  const results = await Promise.allSettled([
-    // 上市（TSE）清單
-    (async () => {
+  // ── Step 1：優先載入 TSE 清單（autocomplete 主要資料）──
+  const tseFetch = (async () => {
+    try {
       const url = IS_FILE
         ? 'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&selectType=ALL'
         : '/proxy/stocklist?response=json&selectType=ALL';
-      const r = await fetch(url, { cache: 'force-cache' });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15000);
+      const r = await fetch(url, { cache: 'force-cache', signal: ctrl.signal });
+      clearTimeout(timer);
       if (!r.ok) return [];
-      let d;
-      try { d = await r.json(); } catch(e) { return []; }
-      if (d.stat === 'OK' && d.data) {
+      let d; try { d = await r.json(); } catch(_) { return []; }
+      if (d.stat === 'OK' && d.data)
         return d.data.map(row => ({ code: row[0].trim(), name: row[1].trim(), market: 'TSE' }));
-      }
-      return [];
-    })(),
-    // 上櫃（OTC）清單（透過本地快取端點）
-    (async () => {
-      if (IS_FILE) return [];
-      const r = await fetch('/tpex/stocklist', { cache: 'force-cache' });
-      if (!r.ok) return [];
-      const d = await r.json();
-      return Array.isArray(d) ? d.map(s => ({ code: s.code, name: s.name, market: 'OTC' })) : [];
-    })()
-  ]);
+    } catch(_) {}
+    return [];
+  })();
 
-  const tseList = results[0].status === 'fulfilled' ? results[0].value : [];
-  const otcList = results[1].status === 'fulfilled' ? results[1].value : [];
-
-  // 合併：TSE 優先，OTC 補充（去除代碼重複）
+  const tseList = await tseFetch;
+  // TSE 載完立刻讓 autocomplete 可用
   const seen = new Set(tseList.map(s => s.code));
-  stockList = [...tseList, ...otcList.filter(s => !seen.has(s.code))];
-
+  stockList = [...tseList];
   acRender(document.getElementById('codeInput').value.trim());
+
+  // ── Step 2：在背景靜默載入 OTC 清單（不阻塞後續操作）──
+  if (!IS_FILE) {
+    (async () => {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        const r = await fetch('/tpex/stocklist', { cache: 'force-cache', signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (Array.isArray(d)) {
+          const otcList = d.map(s => ({ code: s.code, name: s.name, market: 'OTC' }));
+          // 合併至現有清單（避免重複代碼）
+          stockList = [...stockList, ...otcList.filter(s => !seen.has(s.code))];
+        }
+      } catch(_) { /* OTC 清單失敗靜默忽略 */ }
+    })();
+  }
 }
 
 function acHighlight(text, q) {
@@ -760,27 +769,31 @@ function apiUrl(proxyPath, twsePath, params) {
   }
 }
 
-async function fetchJSON(url) {
-  const r = await fetch(url, { cache: 'no-cache' });
+async function fetchJSON(url, timeoutMs = 20000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let r;
+  try {
+    r = await fetch(url, { cache: 'no-cache', signal: ctrl.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError')
+      throw new Error(`請求逾時（${timeoutMs/1000}秒），請稍後再試或確認網路連線。`);
+    throw new Error(`網路錯誤：${e.message}`);
+  }
+  clearTimeout(timer);
+
   if (!r.ok) {
-    // 嘗試解析後端的 JSON 錯誤訊息
-    try {
-      const err = await r.json();
-      throw new Error(err.message || `HTTP ${r.status}`);
-    } catch(e) {
-      throw new Error(e.message || `HTTP ${r.status}`);
-    }
+    let msg = `HTTP ${r.status}`;
+    try { const err = await r.json(); msg = err.message || msg; } catch(_) {}
+    throw new Error(msg);
   }
   let data;
   try {
     data = await r.json();
   } catch (e) {
-    // 回傳了非 JSON（如 HTML 攔截頁），先預覽前100字
-    const text = await r.clone ? '' : '';
     throw new Error(
-      'API 回傳非 JSON 格式。\n' +
-      '可能原因：Render 伺服器 IP 被 TWSE 封鎖，或 TWSE 服務暫時中斷。\n' +
-      '請稍後再試，或改用台灣本地環境執行。'
+      'API 回傳非 JSON 格式（可能是 TWSE 暫時封鎖此伺服器 IP）。\n請稍後再試。'
     );
   }
   if (data.stat === 'ERROR') throw new Error(data.message || '伺服器回傳錯誤');
@@ -1529,22 +1542,20 @@ async function doSearchOTC(code) {
 
 // ── 主查詢入口 ────────────────────────────────────
 async function doSearch() {
-  let raw = $id('codeInput').value.trim();
+  const raw = $id('codeInput').value.trim();
   if (!raw) return;
-
-  // 確保股票清單已載入（名稱查詢與市場偵測都需要）
-  if (stockList === null) {
-    $id('loadingDiv').classList.remove('hidden');
-    set('loadingMsg', '載入股票清單中…');
-    await acLoadList();
-    $id('loadingDiv').classList.add('hidden');
-  }
 
   let code = raw;
   let detectedMarket = null;
 
+  // ── 文字輸入：需要股票清單做名稱對照 ──
   if (!/^\d+$/.test(raw)) {
-    // 文字輸入：從合併清單查名稱
+    if (stockList === null) {
+      $id('loadingDiv').classList.remove('hidden');
+      set('loadingMsg', '載入股票清單中…');
+      await acLoadList();
+      $id('loadingDiv').classList.add('hidden');
+    }
     const match = (stockList || []).find(s =>
       s.name === raw || s.name.includes(raw) || s.code === raw
     );
@@ -1560,12 +1571,13 @@ async function doSearch() {
       return;
     }
   } else {
-    // 純數字：從清單偵測市場
-    const match = (stockList || []).find(s => s.code === code);
-    if (match) detectedMarket = match.market;
+    // ── 純數字代碼：不等清單，直接查詢（清單若已載入則順便偵測市場）──
+    if (stockList && stockList.length > 0) {
+      const match = stockList.find(s => s.code === code);
+      if (match) detectedMarket = match.market;
+    }
   }
 
-  // 套用偵測到的市場（autocomplete 已點選的情況以 currentMarket 為準）
   if (detectedMarket) currentMarket = detectedMarket;
 
   $id('resultsDiv').classList.add('hidden');
@@ -1577,8 +1589,29 @@ async function doSearch() {
     if (currentMarket === 'OTC') {
       await doSearchOTC(code);
     } else {
-      // 預設 TSE；若查無資料且清單未偵測到市場，自動嘗試 OTC
+      // 預設 TSE；若查無資料且清單尚未載入（未知市場），自動 fallback 至 OTC
       try {
         await doSearchTSE(code);
       } catch (tseErr) {
- 
+        if (!detectedMarket && tseErr.message.includes('查無')) {
+          currentMarket = 'OTC';
+          await doSearchOTC(code);
+        } else {
+          throw tseErr;
+        }
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    $id('loadingDiv').classList.add('hidden');
+    $id('errorDiv').classList.remove('hidden');
+    $id('errorDiv').innerHTML =
+      `<strong>❌ 查詢失敗</strong><br>${err.message.replace(/\n/g,'<br>')}<br><br>` +
+      `<small>建議使用 Chrome / Edge 瀏覽器，並確認網路連線正常。</small>`;
+  }
+
+  $id('searchBtn').disabled = false;
+}
+</script>
+</body>
+</html>
