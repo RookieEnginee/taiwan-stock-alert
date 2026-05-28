@@ -223,6 +223,33 @@
       margin-right:4px; margin-bottom:2px;
     }
 
+    /* ── Autocomplete ── */
+    .ac-wrap { position:relative; flex:1; }
+    .ac-dropdown {
+      position:absolute; top:calc(100% + 6px); left:0; right:0;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; z-index:200;
+      max-height:300px; overflow-y:auto;
+      box-shadow:0 8px 24px rgba(0,0,0,.5);
+      display:none;
+    }
+    .ac-dropdown.open { display:block; }
+    .ac-item {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 14px; cursor:pointer; font-size:14px;
+      border-bottom:1px solid rgba(48,54,61,0.4);
+      transition:background .1s;
+    }
+    .ac-item:last-child { border-bottom:none; }
+    .ac-item:hover, .ac-item.active { background:var(--surface2); }
+    .ac-code { color:var(--blue); font-weight:700; min-width:46px; font-size:15px; }
+    .ac-name { color:var(--text); }
+    .ac-hl   { color:var(--yellow); font-weight:700; }
+    .ac-loading { padding:14px; text-align:center; color:var(--muted); font-size:13px; }
+    .ac-market  { margin-left:auto; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; flex-shrink:0; }
+    .ac-tse  { background:#0d2b4c; color:#388bfd; }
+    .ac-otc  { background:#2b1e00; color:#d29922; }
+
     /* ── Responsive ── */
     @media(max-width:600px) {
       body { padding:16px 12px; }
@@ -242,16 +269,23 @@
 
   <!-- Search -->
   <div class="search-wrap">
-    <input id="codeInput" class="search-input"
-      placeholder="輸入股票代碼，例如：2492"
-      maxlength="6"
-      onkeydown="if(event.key==='Enter')doSearch()">
+    <div class="ac-wrap">
+      <input id="codeInput" class="search-input"
+        placeholder="輸入股票代碼或名稱，例如：景 / 3037"
+        maxlength="8"
+        autocomplete="off"
+        oninput="acOnInput()"
+        onfocus="acOnFocus()"
+        onblur="acOnBlur()"
+        onkeydown="acOnKeyDown(event)">
+      <div id="acDropdown" class="ac-dropdown"></div>
+    </div>
     <button id="searchBtn" class="search-btn" onclick="doSearch()">查詢</button>
   </div>
 
   <div id="infoBanner" class="info-banner">
-    📡 資料來源：台灣證券交易所（TWSE）官方 API，每日收盤後更新。<br>
-    ⚡ 僅支援<strong>上市</strong>股票（TSE）；上櫃股票請至 TPEx 官網查詢。<br>
+    📡 資料來源：<strong>上市</strong>（TWSE）官方 API ／ <strong>上櫃</strong>（TPEx）OpenAPI + Yahoo Finance，每日收盤後更新。<br>
+    ⚡ 支援<strong>上市（TSE）</strong>及<strong>上櫃（OTC）</strong>股票查詢；輸入代碼後自動偵測市場。<br>
     ⚠️ 注意股門檻還需「與大盤差幅≥20%」條件，此系統計算以<strong>單純漲跌幅門檻</strong>為參考，實際觸發由交易所電腦判定。
   </div>
 
@@ -481,6 +515,129 @@
 <script>
 'use strict';
 
+// ═══════════════════════════════════════════════
+// Autocomplete
+// ═══════════════════════════════════════════════
+let stockList  = null;   // [{code, name}]
+let acActive   = -1;     // keyboard-highlighted index
+let acTimer    = null;
+let acBlurTimer= null;
+
+async function acLoadList() {
+  if (stockList !== null) return;
+  stockList = [];  // mark as loading
+  const dd = document.getElementById('acDropdown');
+  dd.innerHTML = '<div class="ac-loading">載入股票清單中…</div>';
+  dd.classList.add('open');
+  try {
+    const url = IS_FILE
+      ? 'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&selectType=ALL'
+      : '/proxy/stocklist?response=json&selectType=ALL';
+    const r = await fetch(url, { cache: 'force-cache' });
+    const d = await r.json();
+    if (d.stat === 'OK' && d.data) {
+      stockList = d.data.map(row => ({ code: row[0].trim(), name: row[1].trim() }));
+    }
+  } catch(e) { stockList = []; }
+  acRender(document.getElementById('codeInput').value.trim());
+}
+
+function acHighlight(text, q) {
+  if (!q) return text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return text;
+  return text.slice(0, idx)
+    + '<span class="ac-hl">' + text.slice(idx, idx + q.length) + '</span>'
+    + text.slice(idx + q.length);
+}
+
+function acRender(q) {
+  const dd = document.getElementById('acDropdown');
+  if (!q) { dd.classList.remove('open'); return; }
+  if (!stockList || stockList.length === 0) return;
+
+  const ql = q.toLowerCase();
+  const hits = stockList.filter(s =>
+    s.code.startsWith(ql) || s.name.includes(q)
+  ).slice(0, 12);
+
+  if (hits.length === 0) { dd.classList.remove('open'); return; }
+
+  acActive = -1;
+  dd.innerHTML = hits.map((s, i) => `
+    <div class="ac-item" data-code="${s.code}" data-idx="${i}"
+         onmousedown="acPick('${s.code}')">
+      <span class="ac-code">${acHighlight(s.code, q)}</span>
+      <span class="ac-name">${acHighlight(s.name, q)}</span>
+    </div>`).join('');
+  dd.classList.add('open');
+}
+
+function acPick(code) {
+  document.getElementById('codeInput').value = code;
+  document.getElementById('acDropdown').classList.remove('open');
+  doSearch();
+}
+
+function acOnInput() {
+  clearTimeout(acTimer);
+  acTimer = setTimeout(() => {
+    const q = document.getElementById('codeInput').value.trim();
+    if (stockList === null) { acLoadList(); return; }
+    acRender(q);
+  }, 120);
+}
+
+function acOnFocus() {
+  clearTimeout(acBlurTimer);
+  if (stockList === null) acLoadList();
+  else {
+    const q = document.getElementById('codeInput').value.trim();
+    if (q) acRender(q);
+  }
+}
+
+function acOnBlur() {
+  // 延遲關閉，讓 mousedown 的 acPick 來得及執行
+  acBlurTimer = setTimeout(() => {
+    document.getElementById('acDropdown').classList.remove('open');
+  }, 200);
+}
+
+function acOnKeyDown(e) {
+  const dd  = document.getElementById('acDropdown');
+  const items = dd.querySelectorAll('.ac-item');
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acActive = Math.min(acActive + 1, items.length - 1);
+    acSetActive(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acActive = Math.max(acActive - 1, -1);
+    acSetActive(items);
+  } else if (e.key === 'Enter') {
+    if (acActive >= 0 && items[acActive]) {
+      acPick(items[acActive].dataset.code);
+    } else {
+      dd.classList.remove('open');
+      doSearch();
+    }
+  } else if (e.key === 'Escape') {
+    dd.classList.remove('open');
+  }
+}
+
+function acSetActive(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === acActive));
+  if (acActive >= 0 && items[acActive]) {
+    const code = items[acActive].dataset.code;
+    document.getElementById('codeInput').value = code;
+    items[acActive].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// ═══════════════════════════════════════════════
 let chart = null;
 
 // ═══════════════════════════════════════════════
@@ -509,6 +666,31 @@ function nf(v, dec=2) {
 }
 function stripHtml(s) { return s.replace(/<[^>]*>/g,''); }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ── Taiwan tick size table ──────────────────────────────
+// 漲跌停依各價格區間的最小升降單位（tick）計算
+function getTickSize(price) {
+  if (price <    10) return 0.01;
+  if (price <    50) return 0.05;
+  if (price <   100) return 0.1;
+  if (price <   500) return 0.5;
+  if (price <  1000) return 1;
+  return 5;  // ≥1000 元，tick = 5 元
+}
+// 無條件捨去至合法 tick（漲停板、安全價用）
+function tickFloor(price) {
+  const tick = getTickSize(price);
+  return parseFloat((Math.floor(price / tick + 1e-9) * tick).toFixed(2));
+}
+// 無條件進位至合法 tick（跌停板、觸發門檻用）
+function tickCeil(price) {
+  const tick = getTickSize(price);
+  return parseFloat((Math.ceil(price / tick - 1e-9) * tick).toFixed(2));
+}
+// 漲停板 = floor( close × 1.10 ) 到合法 tick
+function calcLimitUp(close)   { return tickFloor(close * 1.10); }
+// 跌停板 = ceil( close × 0.90 ) 到合法 tick
+function calcLimitDown(close) { return tickCeil(close * 0.90); }
 
 // ═══════════════════════════════════════════════
 // TWSE API calls  (透過本地代理伺服器呼叫，解決 CORS)
@@ -630,9 +812,13 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   // Tomorrow's 6-day window: [D-4, D-3, D-2, D-1, D0, D+1]
   // Base (start of tomorrow's window) = D-4 = dailyData[length-5]
   const base_tmr = dailyData.length >= 5 ? dailyData[dailyData.length - 5] : null;
-  const thr25    = base_tmr ? base_tmr.close * 1.25    : null;
-  const thr32    = base_tmr ? base_tmr.close * 1.32    : null;
-  const thrSafe  = base_tmr ? base_tmr.close * 1.2499  : null; // just below 25%
+  // 觸發門檻對齊合法 tick（取 ceil，讓用戶知道「至少要到這個價」）
+  let thr25 = null, thr32 = null, thrSafe = null;
+  if (base_tmr) {
+    thr25   = tickCeil(base_tmr.close * 1.25);
+    thr32   = tickCeil(base_tmr.close * 1.32);
+    thrSafe = parseFloat((thr25 - getTickSize(thr25)).toFixed(2)); // 剛好低一個 tick
+  }
   const thrVol   = avgVol60 * 5; // Clause 3 volume trigger
 
   // ── Notice history analysis ──
@@ -641,19 +827,59 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     .map(r => parseDateDot(r[5]))
     .sort((a,b) => b - a); // newest first
 
-  const tenDaysAgo   = new Date(today); tenDaysAgo.setDate(today.getDate() - 14); // ~10 trading days
-  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 42); // ~30 trading days
+  const tenDaysAgo    = new Date(today); tenDaysAgo.setDate(today.getDate() - 14);
+  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 42);
 
   const cnt10  = noticeDates.filter(d => d >= tenDaysAgo).length;
   const cnt30  = noticeDates.filter(d => d >= thirtyDaysAgo).length;
 
-  // Consecutive trading days
+  // 建立實際交易日集合（用於判斷「真正連續」）
+  const tradingDaySet = new Set(dailyData.map(d => d.date.toDateString()));
+
+  // 判斷兩個注意日期是否為「連續交易日」：
+  // 兩日期之間不存在任何交易日才算連續
+  function areTradingConsecutive(newer, older) {
+    const cur = new Date(older);
+    cur.setDate(cur.getDate() + 1);
+    while (cur < newer) {
+      if (tradingDaySet.has(cur.toDateString())) return false; // 有交易日被跳過
+      cur.setDate(cur.getDate() + 1);
+    }
+    return true;
+  }
+
+  // 連續注意股天數（以真實交易日曆判斷）
   let consecutive = 0;
   for (let i = 0; i < noticeDates.length; i++) {
     if (i === 0) { consecutive = 1; continue; }
-    const gap = Math.round((noticeDates[i-1] - noticeDates[i]) / 86400000);
-    if (gap <= 4) { consecutive++; } else break; // gap > 4 calendar days = non-consecutive
+    if (areTradingConsecutive(noticeDates[i-1], noticeDates[i])) {
+      consecutive++;
+    } else {
+      break; // 一旦不連續即中斷
+    }
   }
+
+  // ── 確認連續streak是否「仍在作用中」────────────────
+  // 若最後一次注意日到今日最新交易日之間，存在任何「有交易但沒列入注意股」的日子
+  // → 連續已被中斷，r1/r2 應歸零重算（路線③④滾動窗口不受影響）
+  let streakIsLive = false;
+  if (consecutive > 0 && noticeDates.length > 0) {
+    const lastNotice   = noticeDates[0];   // 最近一次注意股日期
+    const lastTrading  = last.date;         // 最新交易日
+    const noticeDaySet = new Set(noticeDates.map(d => d.toDateString()));
+    const cur = new Date(lastNotice);
+    cur.setDate(cur.getDate() + 1);
+    streakIsLive = true;
+    while (cur <= lastTrading) {
+      if (tradingDaySet.has(cur.toDateString()) && !noticeDaySet.has(cur.toDateString())) {
+        streakIsLive = false; // 有交易日但沒被列入注意股 → 連續中斷
+        break;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  // r1/r2 使用「作用中的連續天數」（中斷則視為 0）
+  const liveConsecutive = streakIsLive ? consecutive : 0;
 
   // ── Disposal status ──
   const todayMs = today.getTime();
@@ -671,12 +897,10 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   }
 
   // ── Route needs ──
-  // Route 1: consecutive 3 days (clause 1 only) → need (3 - consecutive) more days
-  // Route 2: consecutive 5 days (clauses 1-8)  → need (5 - consecutive) more
-  // Route 3: 6 / 10 trading days
-  // Route 4: 12 / 30 trading days
-  const r1need = Math.max(0, 3 - consecutive);
-  const r2need = Math.max(0, 5 - consecutive);
+  // 路線①②用 liveConsecutive（中斷則歸零）
+  // 路線③④用滾動窗口計次（不管連續與否）
+  const r1need = Math.max(0, 3 - liveConsecutive);
+  const r2need = Math.max(0, 5 - liveConsecutive);
   const r3need = Math.max(0, 6 - cnt10);
   const r4need = Math.max(0, 12 - cnt30);
   const minNeed = Math.min(r1need, r2need, r3need, r4need);
@@ -686,7 +910,8 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     ret6d, diff6d, base6,
     avgVol60, volRatio,
     thr25, thr32, thrSafe, thrVol,
-    noticeDates, cnt10, cnt30, consecutive,
+    noticeDates, cnt10, cnt30,
+    consecutive, liveConsecutive, streakIsLive,
     noticeRows,
     activeDisposal,
     r1need, r2need, r3need, r4need, minNeed
@@ -806,19 +1031,23 @@ function renderUI(code, stockName, m) {
   } else if (m.minNeed === 0) {
     set('cdText', '即將處置！');
     setStyle('cdText', 'color', 'var(--red)');
-    set('cdSub', '已達觸發門檻，次日將執行處置');
+    set('cdSub', '依 TWSE 公告已達觸發門檻，次日起執行處置');
   } else {
     set('cdText', `還差 ${m.minNeed} 天`);
     setStyle('cdText', 'color', routeColor(m.minNeed));
     const routeNames = { r1:m.r1need, r2:m.r2need, r3:m.r3need, r4:m.r4need };
     const minRoute = Object.entries(routeNames).reduce((a,b) => b[1] < a[1] ? b : a);
     const rNameMap = { r1:'路線①連續3日', r2:'路線②連續5日', r3:'路線③10日內6次', r4:'路線④30日內12次' };
-    set('cdSub', `最快觸發：${rNameMap[minRoute[0]]}`);
+    const sub = m.minNeed === 1
+      ? `最快路線：${rNameMap[minRoute[0]]}（若今日被列入注意股即觸發）`
+      : `最快觸發：${rNameMap[minRoute[0]]}`;
+    set('cdSub', sub);
   }
 
   // ── Threshold calculator ──
-  const upLimitPrice = last.close * 1.10;  // 漲停板
-  const dnLimitPrice = last.close * 0.90;  // 跌停板
+  // 依台股 tick 規則計算漲跌停（≥1000 元 tick=5 元）
+  const upLimitPrice = calcLimitUp(last.close);
+  const dnLimitPrice = calcLimitDown(last.close);
 
   if (m.thr25) {
     set('thr25', `NT$${nf(m.thr25)}`);
@@ -901,7 +1130,13 @@ function renderRoutes(m) {
     card.className = 'routes-card routes-safe';
   }
 
-  function renderRoute(id, current, total, need, unit) {
+  // 把最近 N 個注意日期格式化成 "M/D" 串
+  function fmtNoticeDates(n) {
+    return m.noticeDates.slice(0, n)
+      .map(d => `${d.getMonth()+1}/${d.getDate()}`).join('、');
+  }
+
+  function renderRoute(id, current, total, need, unit, dateStr) {
     const pct = clamp(current / total * 100, 0, 100);
     const fillEl = $id(id + 'fill');
     fillEl.style.width = pct + '%';
@@ -909,17 +1144,42 @@ function renderRoutes(m) {
     setStyle(id + 'val', 'color', routeColor(need));
     if (need === 0) {
       set(id + 'val', `⚠️ ${current}/${total} — 已達門檻！`);
-      set(id + 'det', '次日將執行處置措施');
+      set(id + 'det',
+        `依 TWSE 公告已連續 ${current} 日：${dateStr}\n` +
+        `次日（明日）起執行處置措施`);
+    } else if (need === 1 && current > 0) {
+      set(id + 'val', `${current} / ${total} ${unit}`);
+      set(id + 'det',
+        `已確認：${dateStr}\n` +
+        `⚠️ 若今日收盤後也被 TWSE 列入注意股，明日即觸發此路線`);
     } else {
       set(id + 'val', `${current} / ${total} ${unit}`);
-      set(id + 'det', `還差 ${need} ${unit} 達到處置門檻`);
+      set(id + 'det',
+        `${dateStr ? `已確認：${dateStr}\n` : ''}` +
+        `還差 ${need} ${unit} 達到處置門檻`);
     }
   }
 
-  renderRoute('r1', m.consecutive, 3,  m.r1need, '天');
-  renderRoute('r2', m.consecutive, 5,  m.r2need, '天');
-  renderRoute('r3', m.cnt10,       6,  m.r3need, '次');
-  renderRoute('r4', m.cnt30,       12, m.r4need, '次');
+  // 路線①②：中斷時顯示 0/3，並標示上次連續何時中斷
+  if (!m.streakIsLive && m.consecutive > 0) {
+    const lastStr = `${m.noticeDates[0].getMonth()+1}/${m.noticeDates[0].getDate()}`;
+    function renderBroken(id, total) {
+      const fillEl = $id(id + 'fill');
+      fillEl.style.width = '0%';
+      fillEl.className = 'route-fill rf-green';
+      setStyle(id + 'val', 'color', 'var(--green)');
+      set(id + 'val', `0 / ${total} 天`);
+      set(id + 'det', `連續已中斷（上次注意：${lastStr}）\n下次被列入注意股時從第 1 天重新累計`);
+    }
+    renderBroken('r1', 3);
+    renderBroken('r2', 5);
+  } else {
+    const consecStr = fmtNoticeDates(m.liveConsecutive);
+    renderRoute('r1', m.liveConsecutive, 3, m.r1need, '天', consecStr);
+    renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr);
+  }
+  renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10));
+  renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6)));
 }
 
 function renderChart(data) {
@@ -1058,8 +1318,37 @@ function renderHistory(rows) {
 })();
 
 async function doSearch() {
-  const code = $id('codeInput').value.trim();
-  if (!code) return;
+  let raw = $id('codeInput').value.trim();
+  if (!raw) return;
+
+  // ── 中文 / 名稱 → 代碼轉換 ──────────────────────
+  // 若輸入不是純數字，嘗試從 stockList 查出對應代碼
+  let code = raw;
+  if (!/^\d+$/.test(raw)) {
+    // 若股票清單尚未載入則先等待
+    if (stockList === null) {
+      $id('loadingDiv').classList.remove('hidden');
+      set('loadingMsg', '載入股票清單中…');
+      await acLoadList();
+      $id('loadingDiv').classList.add('hidden');
+    }
+    const q = raw.toLowerCase();
+    const match = (stockList || []).find(s =>
+      s.name === raw ||            // 完全符合名稱
+      s.name.includes(raw) ||      // 名稱包含輸入文字
+      s.code === raw               // 也可能直接輸入代碼
+    );
+    if (match) {
+      code = match.code;
+      $id('codeInput').value = match.code; // 把輸入框換成代碼
+    } else {
+      $id('errorDiv').classList.remove('hidden');
+      $id('errorDiv').innerHTML =
+        `<strong>❌ 找不到「${raw}」</strong><br>` +
+        `請確認名稱是否正確，或直接輸入股票代碼（如：2330）`;
+      return;
+    }
+  }
 
   // Reset
   $id('resultsDiv').classList.add('hidden');
