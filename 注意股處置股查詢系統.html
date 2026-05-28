@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台股注意股・處置股查詢系統</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --blue: #388bfd;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --orange: #db6d28;
+      --red: #f85149;
+      --purple: #a371f7;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background:var(--bg);
+      color:var(--text);
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      min-height:100vh;
+      padding:28px 20px;
+    }
+    .container { max-width:1120px; margin:0 auto; }
+
+    /* ── Header ── */
+    header { text-align:center; margin-bottom:28px; }
+    header h1 { font-size:26px; font-weight:700; letter-spacing:-0.5px; }
+    header p { color:var(--muted); font-size:14px; margin-top:6px; }
+
+    /* ── Search ── */
+    .search-wrap {
+      display:flex; gap:10px; max-width:480px;
+      margin:0 auto 24px;
+    }
+    .search-input {
+      flex:1; background:var(--surface); border:1px solid var(--border);
+      border-radius:8px; padding:12px 16px; color:var(--text);
+      font-size:18px; outline:none; letter-spacing:2px;
+      transition:border-color .2s;
+    }
+    .search-input:focus { border-color:var(--blue); }
+    .search-input::placeholder { color:var(--muted); font-size:14px; letter-spacing:0; }
+    .search-btn {
+      background:var(--blue); color:white; border:none; border-radius:8px;
+      padding:12px 22px; font-size:15px; font-weight:600;
+      cursor:pointer; transition:opacity .2s; white-space:nowrap;
+    }
+    .search-btn:hover { opacity:.85; }
+    .search-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+    /* ── Info Banner ── */
+    .info-banner {
+      background:#131c2b; border:1px solid #1f3a5c;
+      border-radius:8px; padding:12px 16px;
+      font-size:13px; color:#6fa3d8; margin-bottom:24px;
+      line-height:1.7;
+    }
+
+    /* ── Loading / Error ── */
+    .loading { text-align:center; padding:60px 0; color:var(--muted); }
+    .spinner {
+      width:32px; height:32px; border:3px solid var(--border);
+      border-top-color:var(--blue); border-radius:50%;
+      animation:spin .7s linear infinite; margin:0 auto 14px;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .error-box {
+      background:#1a0a0a; border:1px solid var(--red);
+      border-radius:8px; padding:16px; color:var(--red); margin-bottom:20px;
+      line-height:1.6;
+    }
+    .hidden { display:none !important; }
+
+    /* ── Stock Header ── */
+    .stock-header {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:22px 24px;
+      display:flex; justify-content:space-between; align-items:flex-start;
+      flex-wrap:wrap; gap:16px; margin-bottom:18px;
+    }
+    .stkh-left h2 { font-size:24px; font-weight:700; }
+    .stkh-code { color:var(--muted); font-size:14px; margin-top:3px; }
+    .badges { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .badge {
+      padding:4px 12px; border-radius:20px;
+      font-size:12px; font-weight:600; border:1px solid;
+    }
+    .badge-normal   { color:var(--green); border-color:var(--green); background:#0d2b12; }
+    .badge-notice   { color:var(--orange); border-color:var(--orange); background:#2b1500; }
+    .badge-disposal { color:var(--red); border-color:var(--red); background:#2b0a0a; }
+    .badge-watch    { color:var(--yellow); border-color:var(--yellow); background:#2b1e00; }
+    .stkh-right { text-align:right; }
+    .close-price { font-size:30px; font-weight:700; }
+    .price-chg { font-size:14px; margin-top:3px; }
+    .up { color:var(--red); }
+    .dn { color:var(--green); }
+    .fl { color:var(--muted); }
+    .trade-date { font-size:12px; color:var(--muted); margin-top:4px; }
+
+    /* ── Grid ── */
+    .grid4 {
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+      gap:14px; margin-bottom:18px;
+    }
+    .card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:18px;
+    }
+    .card-label { font-size:12px; color:var(--muted); margin-bottom:8px; font-weight:500; }
+    .card-value { font-size:26px; font-weight:700; margin-bottom:6px; }
+    .card-sub { font-size:12px; color:var(--muted); line-height:1.5; }
+
+    /* ── Progress Bar ── */
+    .pbar-wrap { margin-top:10px; }
+    .pbar-track {
+      height:7px; background:var(--surface2); border-radius:4px;
+      overflow:hidden; position:relative;
+    }
+    .pbar-fill { height:100%; border-radius:4px; transition:width .5s ease; }
+    .pbar-labels {
+      display:flex; justify-content:space-between;
+      font-size:11px; color:var(--muted); margin-top:4px;
+    }
+    /* Markers on track */
+    .pbar-container { position:relative; }
+    .pbar-marker {
+      position:absolute; top:0; bottom:0; width:2px;
+      background:rgba(255,255,255,0.3); border-radius:1px;
+    }
+
+    /* ── Chart Card ── */
+    .chart-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:20px; margin-bottom:18px;
+    }
+    .card-title { font-size:14px; font-weight:600; margin-bottom:16px; }
+
+    /* ── Threshold Card ── */
+    .threshold-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:20px; margin-bottom:18px;
+    }
+    .threshold-title { font-size:14px; font-weight:600; color:var(--orange); margin-bottom:14px; }
+    .thr-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; }
+    .thr-item {
+      background:var(--surface2); border-radius:8px; padding:14px;
+    }
+    .thr-lbl { font-size:11px; color:var(--muted); margin-bottom:5px; }
+    .thr-val { font-size:20px; font-weight:700; }
+    .thr-note { font-size:11px; color:var(--muted); margin-top:5px; line-height:1.4; }
+
+    /* ── Disposal Routes Card ── */
+    .routes-card {
+      border-radius:12px; padding:20px; margin-bottom:18px;
+      border:1px solid;
+    }
+    .routes-safe    { background:#0d1f12; border-color:var(--green); }
+    .routes-warning { background:#1f1800; border-color:var(--yellow); }
+    .routes-danger  { background:#1f0a0a; border-color:var(--red); }
+    .routes-title { font-size:14px; font-weight:600; margin-bottom:14px; }
+    .routes-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:12px; }
+    .route-item {
+      background:rgba(0,0,0,0.25); border-radius:8px; padding:14px;
+    }
+    .route-lbl { font-size:11px; color:var(--muted); margin-bottom:6px; }
+    .route-val { font-size:18px; font-weight:700; margin-bottom:6px; }
+    .route-track { height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; }
+    .route-fill { height:100%; border-radius:3px; transition:width .5s ease; }
+    .route-detail { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4; }
+    .rf-green  { background:var(--green); }
+    .rf-yellow { background:var(--yellow); }
+    .rf-orange { background:var(--orange); }
+    .rf-red    { background:var(--red); }
+
+    /* ── Active Disposal Card ── */
+    .disposal-active-card {
+      background:#1f0a0a; border:1px solid var(--red);
+      border-radius:12px; padding:20px; margin-bottom:18px;
+    }
+    .disposal-active-title { font-size:14px; font-weight:600; color:var(--red); margin-bottom:12px; }
+    .disposal-info-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; }
+    .dinfo-item { background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; }
+    .dinfo-lbl { font-size:11px; color:var(--muted); margin-bottom:3px; }
+    .dinfo-val { font-size:14px; font-weight:600; }
+    .disposal-content {
+      margin-top:14px; padding:12px; background:rgba(0,0,0,0.2);
+      border-radius:8px; font-size:12px; color:#b0b8c4; line-height:1.8;
+      white-space:pre-wrap; max-height:200px; overflow-y:auto;
+    }
+
+    /* ── History Table ── */
+    .history-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:20px; margin-bottom:18px;
+      overflow-x:auto;
+    }
+    table { width:100%; border-collapse:collapse; min-width:500px; }
+    th {
+      text-align:left; font-size:11px; color:var(--muted);
+      padding:8px 12px; border-bottom:1px solid var(--border);
+      font-weight:600; text-transform:uppercase; letter-spacing:.5px;
+    }
+    td {
+      padding:10px 12px; font-size:13px;
+      border-bottom:1px solid rgba(48,54,61,0.5);
+      vertical-align:top;
+    }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:rgba(255,255,255,0.02); }
+    .tag {
+      display:inline-block; padding:2px 6px;
+      border-radius:4px; font-size:11px; font-weight:600;
+      background:#2b1500; color:var(--orange);
+      margin-right:4px; margin-bottom:2px;
+    }
+
+    /* ── Responsive ── */
+    @media(max-width:600px) {
+      body { padding:16px 12px; }
+      .stock-header { flex-direction:column; }
+      .stkh-right { text-align:left; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>🔍 台股注意股・處置股查詢系統</h1>
+    <p>即時分析個股注意/處置狀態，精算明日觸發條件與處置倒數</p>
+  </header>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <input id="codeInput" class="search-input"
+      placeholder="輸入股票代碼，例如：2492"
+      maxlength="6"
+      onkeydown="if(event.key==='Enter')doSearch()">
+    <button id="searchBtn" class="search-btn" onclick="doSearch()">查詢</button>
+  </div>
+
+  <div id="infoBanner" class="info-banner">
+    📡 資料來源：台灣證券交易所（TWSE）官方 API，每日收盤後更新。<br>
+    ⚡ 僅支援<strong>上市</strong>股票（TSE）；上櫃股票請至 TPEx 官網查詢。<br>
+    ⚠️ 注意股門檻還需「與大盤差幅≥20%」條件，此系統計算以<strong>單純漲跌幅門檻</strong>為參考，實際觸發由交易所電腦判定。
+  </div>
+
+  <!-- file:// 直接開啟時顯示啟動提示 -->
+  <div id="corsWarning" class="hidden" style="
+    background:#1f1800; border:1px solid #d29922;
+    border-radius:8px; padding:16px; margin-bottom:24px;
+    font-size:14px; color:#f0c060; line-height:1.8;
+  ">
+    ⚠️ <strong>偵測到您直接用檔案開啟（file://），無法存取 TWSE API</strong><br>
+    請改用下方任一方式：<br><br>
+    &nbsp;&nbsp;① 雙擊同資料夾的 <strong>「啟動查詢系統.bat」</strong>（本機，需安裝 Python）<br>
+    &nbsp;&nbsp;② 若是已部署的網址（如 Render），直接開啟網址即可，無需此步驟<br><br>
+    如尚未安裝 Python，請至 <a href="https://www.python.org/downloads/" target="_blank" style="color:#f0c060">python.org</a> 下載安裝（勾選「Add to PATH」）。
+  </div>
+
+  <!-- Loading -->
+  <div id="loadingDiv" class="loading hidden">
+    <div class="spinner"></div>
+    <div id="loadingMsg" style="font-size:14px">資料載入中…</div>
+  </div>
+
+  <!-- Error -->
+  <div id="errorDiv" class="error-box hidden"></div>
+
+  <!-- Results -->
+  <div id="resultsDiv" class="hidden">
+
+    <!-- Stock header -->
+    <div class="stock-header">
+      <div class="stkh-left">
+        <h2 id="stkName">--</h2>
+        <div class="stkh-code" id="stkCode">--</div>
+        <div class="badges">
+          <span id="badgeMain" class="badge badge-normal">✅ 一般股票</span>
+          <span id="badgeDisposal" class="badge badge-disposal hidden">🚨 處置中</span>
+        </div>
+      </div>
+      <div class="stkh-right">
+        <div class="close-price" id="closePrice">--</div>
+        <div class="price-chg" id="priceChg">--</div>
+        <div class="trade-date" id="tradeDate">--</div>
+      </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <div class="grid4">
+      <!-- 6日漲跌幅 -->
+      <div class="card">
+        <div class="card-label">📊 最近6日累積漲跌幅</div>
+        <div class="card-value" id="ret6d">--</div>
+        <div class="pbar-wrap">
+          <div class="pbar-container">
+            <div class="pbar-track">
+              <div class="pbar-fill" id="retFill" style="width:0"></div>
+            </div>
+          </div>
+          <div class="pbar-labels">
+            <span>0%</span><span>25% 門檻</span><span>32% 門檻</span>
+          </div>
+        </div>
+        <div class="card-sub" id="ret6dSub" style="margin-top:8px">--</div>
+      </div>
+
+      <!-- 成交量比 -->
+      <div class="card">
+        <div class="card-label">📦 今日量 vs 60日均量</div>
+        <div class="card-value" id="volRatio">--</div>
+        <div class="pbar-wrap">
+          <div class="pbar-track">
+            <div class="pbar-fill" id="volFill" style="width:0;background:var(--blue)"></div>
+          </div>
+          <div class="pbar-labels">
+            <span>0</span><span>5倍（門檻）</span><span>10倍</span>
+          </div>
+        </div>
+        <div class="card-sub" id="volSub" style="margin-top:8px">--</div>
+      </div>
+
+      <!-- 注意次數 -->
+      <div class="card">
+        <div class="card-label">⚠️ 注意股歷史記錄</div>
+        <div class="card-value" id="noticeCnt">-- 次</div>
+        <div class="card-sub" id="noticeSub">--</div>
+      </div>
+
+      <!-- 處置倒數 -->
+      <div class="card">
+        <div class="card-label">🚨 最快處置路線剩餘</div>
+        <div class="card-value" id="cdText">--</div>
+        <div class="card-sub" id="cdSub">--</div>
+      </div>
+    </div>
+
+    <!-- Price Chart -->
+    <div class="chart-card">
+      <div class="card-title">📈 近30日收盤價走勢 &amp; 成交量</div>
+      <canvas id="priceChart" height="90"></canvas>
+    </div>
+
+    <!-- Tomorrow's Trigger Calculator -->
+    <div class="threshold-card">
+      <div class="threshold-title">🎯 明日觸發注意股條件計算（以今日為基礎推估）</div>
+      <div class="thr-grid">
+        <div class="thr-item">
+          <div class="thr-lbl">第1款 A — 觸發 6日漲幅 ≥ 25%</div>
+          <div class="thr-val" id="thr25" style="color:var(--orange)">NT$ --</div>
+          <div class="thr-note">明日收盤 ≥ 此價<br>（且須比大盤多漲20%）</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第1款 B — 觸發 6日漲幅 ≥ 32%（更嚴格）</div>
+          <div class="thr-val" id="thr32" style="color:var(--red)">NT$ --</div>
+          <div class="thr-note">明日收盤 ≥ 此價<br>（且須比大盤多漲20%）</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">安全線 — 不觸發第1款（漲幅 &lt; 25%）</div>
+          <div class="thr-val" id="thrSafe" style="color:var(--green)">NT$ --</div>
+          <div class="thr-note">明日收盤 &lt; 此價<br>第1款漲幅條件不達門檻</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第3款 — 成交量觸發（60日均量 × 5倍）</div>
+          <div class="thr-val" id="thrVol" style="color:var(--yellow)">-- 張</div>
+          <div class="thr-note">成交量 ≥ 此值<br>且6日漲幅同時 ≥ 25% 觸發</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第4款 — 週轉率觸發門檻</div>
+          <div class="thr-val" style="color:var(--purple)">≥ 10%</div>
+          <div class="thr-note">當日週轉率 ≥ 10%<br>且6日漲幅同時 ≥ 25% 觸發</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">今日6日起迄價差</div>
+          <div class="thr-val" id="priceDiff" style="color:var(--blue)">NT$ --</div>
+          <div class="thr-note">起迄 ≥ NT$50 為注意股<br>第1款附加條件之一</div>
+        </div>
+      </div>
+
+      <!-- 漲跌停板資訊 -->
+      <div style="
+        margin-top:14px; padding:14px 16px;
+        background:var(--surface2); border-radius:8px;
+        display:flex; flex-wrap:wrap; gap:16px; align-items:center;
+        font-size:13px;
+      ">
+        <span style="color:var(--muted); font-weight:600;">📌 台股每日漲跌停限制（±10%）</span>
+        <span>明日漲停板：<strong id="upLimit" style="color:var(--red)">--</strong></span>
+        <span>明日跌停板：<strong id="dnLimit" style="color:var(--green)">--</strong></span>
+        <span id="thr25Reach" style="padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600;"></span>
+        <span id="thr32Reach" style="padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600;"></span>
+      </div>
+    </div>
+
+    <!-- Disposal Routes Card -->
+    <div id="routesCard" class="routes-card routes-safe">
+      <div class="routes-title">🚨 處置股觸發路線分析（四條路線任一達標即觸發）</div>
+      <div class="routes-grid">
+        <div class="route-item">
+          <div class="route-lbl">路線① 連續3日（第1款）</div>
+          <div class="route-val" id="r1val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r1fill" style="width:0"></div></div>
+          <div class="route-detail" id="r1det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線② 連續5日（第1~8款）</div>
+          <div class="route-val" id="r2val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r2fill" style="width:0"></div></div>
+          <div class="route-detail" id="r2det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線③ 近10日內6次（第1~8款）</div>
+          <div class="route-val" id="r3val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r3fill" style="width:0"></div></div>
+          <div class="route-detail" id="r3det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線④ 近30日內12次（第1~8款）</div>
+          <div class="route-val" id="r4val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r4fill" style="width:0"></div></div>
+          <div class="route-detail" id="r4det">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Disposal Info -->
+    <div id="activeDisposalCard" class="disposal-active-card hidden">
+      <div class="disposal-active-title">🚨 目前處置中 — 詳細資訊</div>
+      <div class="disposal-info-grid">
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">公布日期</div>
+          <div class="dinfo-val" id="dAnnDate">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">處置次數</div>
+          <div class="dinfo-val" id="dTimes">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">處置原因</div>
+          <div class="dinfo-val" id="dReason">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">處置起迄</div>
+          <div class="dinfo-val" id="dPeriod">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">措施類型</div>
+          <div class="dinfo-val" id="dMeasure">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">剩餘天數</div>
+          <div class="dinfo-val" id="dRemain">--</div>
+        </div>
+      </div>
+      <div class="disposal-content" id="dContent">--</div>
+    </div>
+
+    <!-- Notice History Table -->
+    <div class="history-card">
+      <div class="card-title">📋 近60日注意股記錄（共 <span id="histCnt">0</span> 筆）</div>
+      <div id="histTableWrap">
+        <div style="padding:20px 0; text-align:center; color:var(--muted)">查詢中…</div>
+      </div>
+    </div>
+
+  </div><!-- /resultsDiv -->
+
+</div><!-- /container -->
+
+<script>
+'use strict';
+
+let chart = null;
+
+// ═══════════════════════════════════════════════
+// Utility helpers
+// ═══════════════════════════════════════════════
+function parseDateSlash(s) {
+  // "115/05/28" → Date
+  const p = s.trim().split('/');
+  return new Date(+p[0] + 1911, +p[1] - 1, +p[2]);
+}
+function parseDateDot(s) {
+  // "115.05.28" → Date
+  const p = s.trim().split('.');
+  return new Date(+p[0] + 1911, +p[1] - 1, +p[2]);
+}
+function fmtDate(d) {
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`;
+}
+function apiDate(d) {
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+function nf(v, dec=2) {
+  if (isNaN(v)) return '--';
+  return v.toLocaleString('zh-TW', { minimumFractionDigits:dec, maximumFractionDigits:dec });
+}
+function stripHtml(s) { return s.replace(/<[^>]*>/g,''); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ═══════════════════════════════════════════════
+// TWSE API calls  (透過本地代理伺服器呼叫，解決 CORS)
+// ═══════════════════════════════════════════════
+
+// 偵測是否以 file:// 直接開啟（此時無法呼叫外部 API）
+const IS_FILE = location.protocol === 'file:';
+
+// 根據環境產生正確的 API URL
+// - HTTP/HTTPS 環境（本機 Python server 或 Render 等雲端）→ 使用本地代理路徑
+// - file:// 直接開啟 → 嘗試直接呼叫 TWSE（通常會被 CORS 擋）
+function apiUrl(proxyPath, twsePath, params) {
+  const qs = new URLSearchParams({ response: 'json', ...params }).toString();
+  if (!IS_FILE) {
+    // 透過同源代理伺服器（Python 本機 或 Flask 雲端）
+    return `${proxyPath}?${qs}`;
+  } else {
+    // 直接呼叫 TWSE，僅供降級參考
+    return `https://www.twse.com.tw${twsePath}?${qs}`;
+  }
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.stat === 'ERROR') throw new Error(data.message || '伺服器回傳錯誤');
+  return data;
+}
+
+async function getMonthData(code, year, month) {
+  const url = apiUrl(
+    '/proxy/stock_day',
+    '/exchangeReport/STOCK_DAY',
+    { stockNo: code, date: `${year}${pad(month)}01` }
+  );
+  const d = await fetchJSON(url);
+  if (d.stat !== 'OK' || !d.data) return { rows: [], title: '' };
+  return { rows: d.data, title: d.title || '' };
+}
+
+async function getDailyData(code) {
+  const today = new Date();
+  const months = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ y: d.getFullYear(), m: d.getMonth() + 1 });
+  }
+
+  const all = [];
+  let stockName = '';
+
+  for (const { y, m } of months) {
+    const { rows, title } = await getMonthData(code, y, m);
+    if (title && !stockName) {
+      // Extract: "115年05月 2330 台積電           各日成交資訊"
+      const match = title.match(/\d{4}\s+(.+?)\s{2,}/);
+      if (match) stockName = match[1].trim();
+    }
+    for (const row of rows) {
+      all.push({
+        date:   parseDateSlash(row[0]),
+        vol:    parseInt(row[1].replace(/,/g, '')),
+        val:    parseInt(row[2].replace(/,/g, '')),
+        open:   parseFloat(row[3].replace(/,/g, '')),
+        high:   parseFloat(row[4].replace(/,/g, '')),
+        low:    parseFloat(row[5].replace(/,/g, '')),
+        close:  parseFloat(row[6].replace(/,/g, '')),
+        chgStr: row[7].trim(),
+        trades: parseInt(row[8].replace(/,/g, ''))
+      });
+    }
+  }
+
+  all.sort((a, b) => a.date - b.date);
+  return { data: all, name: stockName };
+}
+
+async function getNoticeHistory(code) {
+  const today = new Date();
+  const start = new Date(today); start.setDate(start.getDate() - 60);
+  const url = apiUrl(
+    '/proxy/notice',
+    '/announcement/notice',
+    { querytype: '2', startDate: apiDate(start), endDate: apiDate(today), stockNo: code }
+  );
+  const d = await fetchJSON(url);
+  return d.data || [];
+}
+
+async function getDisposalList() {
+  const url = apiUrl('/proxy/punish', '/announcement/punish', {});
+  const d = await fetchJSON(url);
+  return d.data || [];
+}
+
+// ═══════════════════════════════════════════════
+// Analysis engine
+// ═══════════════════════════════════════════════
+function analyse(code, dailyData, noticeRows, disposalList) {
+  if (dailyData.length < 6) return null;
+
+  const today  = new Date();
+  const last   = dailyData[dailyData.length - 1];
+  const last6  = dailyData.slice(-6);
+  const last30 = dailyData.slice(-30);
+  const last60 = dailyData.slice(Math.max(0, dailyData.length - 60));
+
+  // ── 6-day return ──
+  const base6  = last6[0];
+  const ret6d  = (last.close / base6.close - 1) * 100;
+  const diff6d = last.close - base6.close; // price difference (NT$)
+
+  // ── Volume ──
+  const avgVol60 = last60.reduce((s,d)=>s+d.vol, 0) / last60.length;
+  const volRatio = last.vol / avgVol60;
+
+  // ── Tomorrow's trigger prices ──
+  // Tomorrow's 6-day window: [D-4, D-3, D-2, D-1, D0, D+1]
+  // Base (start of tomorrow's window) = D-4 = dailyData[length-5]
+  const base_tmr = dailyData.length >= 5 ? dailyData[dailyData.length - 5] : null;
+  const thr25    = base_tmr ? base_tmr.close * 1.25    : null;
+  const thr32    = base_tmr ? base_tmr.close * 1.32    : null;
+  const thrSafe  = base_tmr ? base_tmr.close * 1.2499  : null; // just below 25%
+  const thrVol   = avgVol60 * 5; // Clause 3 volume trigger
+
+  // ── Notice history analysis ──
+  // noticeRows[i][5] = "115.05.27" (date), already sorted newest first by TWSE
+  const noticeDates = noticeRows
+    .map(r => parseDateDot(r[5]))
+    .sort((a,b) => b - a); // newest first
+
+  const tenDaysAgo   = new Date(today); tenDaysAgo.setDate(today.getDate() - 14); // ~10 trading days
+  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 42); // ~30 trading days
+
+  const cnt10  = noticeDates.filter(d => d >= tenDaysAgo).length;
+  const cnt30  = noticeDates.filter(d => d >= thirtyDaysAgo).length;
+
+  // Consecutive trading days
+  let consecutive = 0;
+  for (let i = 0; i < noticeDates.length; i++) {
+    if (i === 0) { consecutive = 1; continue; }
+    const gap = Math.round((noticeDates[i-1] - noticeDates[i]) / 86400000);
+    if (gap <= 4) { consecutive++; } else break; // gap > 4 calendar days = non-consecutive
+  }
+
+  // ── Disposal status ──
+  const todayMs = today.getTime();
+  let activeDisposal = null;
+  const myEntries = disposalList.filter(r => r[2] === code);
+  for (const row of myEntries) {
+    const range = row[6] || ''; // "115/05/27～115/06/09"
+    const parts = range.split('～');
+    if (parts.length !== 2) continue;
+    const s = parseDateSlash(parts[0].trim());
+    const e = parseDateSlash(parts[1].trim());
+    if (todayMs >= s.getTime() && todayMs <= e.getTime()) {
+      activeDisposal = row; break;
+    }
+  }
+
+  // ── Route needs ──
+  // Route 1: consecutive 3 days (clause 1 only) → need (3 - consecutive) more days
+  // Route 2: consecutive 5 days (clauses 1-8)  → need (5 - consecutive) more
+  // Route 3: 6 / 10 trading days
+  // Route 4: 12 / 30 trading days
+  const r1need = Math.max(0, 3 - consecutive);
+  const r2need = Math.max(0, 5 - consecutive);
+  const r3need = Math.max(0, 6 - cnt10);
+  const r4need = Math.max(0, 12 - cnt30);
+  const minNeed = Math.min(r1need, r2need, r3need, r4need);
+
+  return {
+    last, last6, last30,
+    ret6d, diff6d, base6,
+    avgVol60, volRatio,
+    thr25, thr32, thrSafe, thrVol,
+    noticeDates, cnt10, cnt30, consecutive,
+    noticeRows,
+    activeDisposal,
+    r1need, r2need, r3need, r4need, minNeed
+  };
+}
+
+// ═══════════════════════════════════════════════
+// Render helpers
+// ═══════════════════════════════════════════════
+function retColor(pct) {
+  const a = Math.abs(pct);
+  if (a >= 32) return 'var(--red)';
+  if (a >= 25) return 'var(--orange)';
+  if (a >= 15) return 'var(--yellow)';
+  return 'var(--green)';
+}
+function routeColor(need) {
+  if (need === 0) return 'var(--red)';
+  if (need === 1) return 'var(--orange)';
+  if (need === 2) return 'var(--yellow)';
+  return 'var(--green)';
+}
+function routeClass(need) {
+  if (need === 0) return 'rf-red';
+  if (need === 1) return 'rf-orange';
+  if (need === 2) return 'rf-yellow';
+  return 'rf-green';
+}
+function $id(id) { return document.getElementById(id); }
+function set(id, val) { $id(id).textContent = val; }
+function setStyle(id, prop, val) { $id(id).style[prop] = val; }
+
+// ═══════════════════════════════════════════════
+// Render UI
+// ═══════════════════════════════════════════════
+function renderUI(code, stockName, m) {
+  const last = m.last;
+
+  // Stock header
+  set('stkName', stockName || code);
+  set('stkCode', `股票代碼：${code}`);
+  set('closePrice', `NT$${nf(last.close)}`);
+  set('tradeDate', `最後交易日：${fmtDate(last.date)}`);
+
+  // Price change
+  const chgEl = $id('priceChg');
+  if (last.chgStr.startsWith('+')) {
+    chgEl.textContent = `▲ +${last.chgStr.replace('+','')}`;
+    chgEl.className = 'price-chg up';
+  } else if (last.chgStr.startsWith('-')) {
+    chgEl.textContent = `▼ ${last.chgStr}`;
+    chgEl.className = 'price-chg dn';
+  } else {
+    chgEl.textContent = `─ ${last.chgStr}`;
+    chgEl.className = 'price-chg fl';
+  }
+
+  // Status badges
+  const badgeMain = $id('badgeMain');
+  const badgeDisp = $id('badgeDisposal');
+  if (m.activeDisposal) {
+    badgeMain.className = 'badge badge-disposal';
+    badgeMain.textContent = '🚨 處置股';
+    badgeDisp.classList.add('hidden');
+  } else if (m.minNeed <= 1) {
+    badgeMain.className = 'badge badge-notice';
+    badgeMain.textContent = '⚠️ 高風險 — 接近處置';
+    badgeDisp.classList.add('hidden');
+  } else if (m.consecutive >= 1 || m.cnt10 >= 3) {
+    badgeMain.className = 'badge badge-watch';
+    badgeMain.textContent = '⚠️ 注意股歷史中';
+    badgeDisp.classList.add('hidden');
+  } else {
+    badgeMain.className = 'badge badge-normal';
+    badgeMain.textContent = '✅ 一般股票';
+    badgeDisp.classList.add('hidden');
+  }
+
+  // ── 6-day return card ──
+  const retAbs = Math.abs(m.ret6d);
+  const retSign = m.ret6d >= 0 ? '+' : '';
+  set('ret6d', `${retSign}${nf(m.ret6d)}%`);
+  setStyle('ret6d', 'color', retColor(m.ret6d));
+  // Fill bar: 0–40% maps to 0–100%
+  const retPct = clamp(retAbs / 40 * 100, 0, 100);
+  $id('retFill').style.width = retPct + '%';
+  $id('retFill').style.background = retColor(m.ret6d);
+  set('ret6dSub',
+    `基準日 ${fmtDate(m.base6.date)}：NT$${nf(m.base6.close)}` +
+    `\n→ 今日：NT$${nf(last.close)}`
+  );
+
+  // ── Volume card ──
+  set('volRatio', `${nf(m.volRatio, 1)} 倍`);
+  setStyle('volRatio', 'color', m.volRatio >= 5 ? 'var(--red)' : m.volRatio >= 3 ? 'var(--orange)' : 'var(--blue)');
+  const volPct = clamp(m.volRatio / 10 * 100, 0, 100);
+  $id('volFill').style.width = volPct + '%';
+  $id('volFill').style.background = m.volRatio >= 5 ? 'var(--red)' : m.volRatio >= 3 ? 'var(--orange)' : 'var(--blue)';
+  set('volSub',
+    `今日：${Math.round(last.vol/1000).toLocaleString()} 張` +
+    `\n60日均：${Math.round(m.avgVol60/1000).toLocaleString()} 張`
+  );
+
+  // ── Notice count card ──
+  set('noticeCnt', `${m.cnt30} 次`);
+  setStyle('noticeCnt', 'color', m.cnt30 >= 10 ? 'var(--red)' : m.cnt30 >= 6 ? 'var(--orange)' : m.cnt30 >= 3 ? 'var(--yellow)' : 'var(--green)');
+  set('noticeSub',
+    `近10日：${m.cnt10} 次 ／ 近30日：${m.cnt30} 次` +
+    `\n連續注意天數：${m.consecutive} 天`
+  );
+
+  // ── Countdown card ──
+  if (m.activeDisposal) {
+    set('cdText', '處置中');
+    setStyle('cdText', 'color', 'var(--red)');
+    set('cdSub', '見下方處置詳細資訊');
+  } else if (m.minNeed === 0) {
+    set('cdText', '即將處置！');
+    setStyle('cdText', 'color', 'var(--red)');
+    set('cdSub', '已達觸發門檻，次日將執行處置');
+  } else {
+    set('cdText', `還差 ${m.minNeed} 天`);
+    setStyle('cdText', 'color', routeColor(m.minNeed));
+    const routeNames = { r1:m.r1need, r2:m.r2need, r3:m.r3need, r4:m.r4need };
+    const minRoute = Object.entries(routeNames).reduce((a,b) => b[1] < a[1] ? b : a);
+    const rNameMap = { r1:'路線①連續3日', r2:'路線②連續5日', r3:'路線③10日內6次', r4:'路線④30日內12次' };
+    set('cdSub', `最快觸發：${rNameMap[minRoute[0]]}`);
+  }
+
+  // ── Threshold calculator ──
+  const upLimitPrice = last.close * 1.10;  // 漲停板
+  const dnLimitPrice = last.close * 0.90;  // 跌停板
+
+  if (m.thr25) {
+    set('thr25', `NT$${nf(m.thr25)}`);
+    set('thr32', `NT$${nf(m.thr32)}`);
+    set('thrSafe', `NT$${nf(m.thrSafe)}`);
+  }
+  set('thrVol', `${Math.round(m.thrVol / 1000).toLocaleString()} 張`);
+  set('priceDiff', `NT$${nf(Math.abs(m.diff6d))}`);
+  setStyle('priceDiff', 'color', Math.abs(m.diff6d) >= 50 ? 'var(--orange)' : 'var(--blue)');
+
+  // 漲跌停板資訊
+  set('upLimit', `NT$${nf(upLimitPrice)}`);
+  set('dnLimit', `NT$${nf(dnLimitPrice)}`);
+
+  // 25% 門檻是否在明日漲停板內可觸達
+  const r25El = $id('thr25Reach');
+  const r32El = $id('thr32Reach');
+  if (m.thr25) {
+    if (m.thr25 > upLimitPrice) {
+      r25El.textContent = '25%門檻 > 漲停板 → 明日單日無法觸達';
+      r25El.style.cssText = 'background:#2b1500;color:var(--orange);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600';
+    } else if (m.thr25 < dnLimitPrice) {
+      r25El.textContent = '25%下跌門檻 < 跌停板 → 明日單日無法觸達';
+      r25El.style.cssText = 'background:#2b1500;color:var(--orange);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600';
+    } else {
+      r25El.textContent = '✅ 25%門檻在漲跌停範圍內，明日可能觸達';
+      r25El.style.cssText = 'background:#0d2b12;color:var(--green);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600';
+    }
+    if (m.thr32 > upLimitPrice) {
+      r32El.textContent = '32%門檻 > 漲停板 → 明日單日不可能觸達';
+      r32El.style.cssText = 'background:#2b0a0a;color:var(--red);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600';
+    } else {
+      r32El.textContent = '32%門檻在漲跌停範圍內';
+      r32El.style.cssText = 'background:#0d2b12;color:var(--green);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600';
+    }
+  }
+
+  // ── Routes card ──
+  renderRoutes(m);
+
+  // ── Active disposal info ──
+  const adCard = $id('activeDisposalCard');
+  if (m.activeDisposal) {
+    adCard.classList.remove('hidden');
+    const row = m.activeDisposal;
+    set('dAnnDate', row[1]);
+    set('dTimes',   `第 ${row[4]} 次`);
+    set('dReason',  row[5]);
+    set('dPeriod',  row[6]);
+    set('dMeasure', row[7]);
+    // Remaining days
+    const range = row[6].split('～');
+    if (range.length === 2) {
+      const endD = parseDateSlash(range[1].trim());
+      const dayLeft = Math.round((endD - new Date()) / 86400000);
+      set('dRemain', dayLeft > 0 ? `${dayLeft} 日` : '即將結束');
+    }
+    // Content (strip HTML, first ~800 chars)
+    const content = stripHtml(row[8] || '').replace(/\n+/g,'\n').trim().substring(0, 800);
+    set('dContent', content);
+  } else {
+    adCard.classList.add('hidden');
+  }
+
+  // ── Chart ──
+  renderChart(m.last30);
+
+  // ── History table ──
+  renderHistory(m.noticeRows);
+}
+
+function renderRoutes(m) {
+  const card = $id('routesCard');
+  const minNeed = m.minNeed;
+  if (m.activeDisposal || minNeed === 0) {
+    card.className = 'routes-card routes-danger';
+  } else if (minNeed <= 2) {
+    card.className = 'routes-card routes-warning';
+  } else {
+    card.className = 'routes-card routes-safe';
+  }
+
+  function renderRoute(id, current, total, need, unit) {
+    const pct = clamp(current / total * 100, 0, 100);
+    const fillEl = $id(id + 'fill');
+    fillEl.style.width = pct + '%';
+    fillEl.className = 'route-fill ' + routeClass(need);
+    setStyle(id + 'val', 'color', routeColor(need));
+    if (need === 0) {
+      set(id + 'val', `⚠️ ${current}/${total} — 已達門檻！`);
+      set(id + 'det', '次日將執行處置措施');
+    } else {
+      set(id + 'val', `${current} / ${total} ${unit}`);
+      set(id + 'det', `還差 ${need} ${unit} 達到處置門檻`);
+    }
+  }
+
+  renderRoute('r1', m.consecutive, 3,  m.r1need, '天');
+  renderRoute('r2', m.consecutive, 5,  m.r2need, '天');
+  renderRoute('r3', m.cnt10,       6,  m.r3need, '次');
+  renderRoute('r4', m.cnt30,       12, m.r4need, '次');
+}
+
+function renderChart(data) {
+  const labels = data.map(d => `${d.date.getMonth()+1}/${d.date.getDate()}`);
+  const closes = data.map(d => d.close);
+  const vols   = data.map(d => Math.round(d.vol / 1000));
+
+  const lineColor = closes[closes.length-1] >= closes[0] ? '#f85149' : '#3fb950';
+
+  if (chart) { chart.destroy(); chart = null; }
+
+  const ctx = $id('priceChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '收盤價',
+          data: closes,
+          borderColor: lineColor,
+          backgroundColor: lineColor + '18',
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          yAxisID: 'y'
+        },
+        {
+          label: '成交量(張)',
+          data: vols,
+          type: 'bar',
+          backgroundColor: '#388bfd28',
+          borderColor: '#388bfd',
+          borderWidth: 0,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#7d8590', usePointStyle: true, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              if (ctx.datasetIndex === 0) return ` 收盤：NT$${nf(ctx.raw)}`;
+              return ` 成交量：${ctx.raw.toLocaleString()} 張`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#7d8590', maxTicksLimit: 15 },
+          grid:  { color: '#21262d' }
+        },
+        y: {
+          position: 'left',
+          ticks: { color: '#7d8590', callback: v => `$${nf(v, 0)}` },
+          grid:  { color: '#21262d' }
+        },
+        y1: {
+          position: 'right',
+          ticks: { color: '#388bfd', callback: v => `${v.toLocaleString()}張` },
+          grid:  { drawOnChartArea: false }
+        }
+      }
+    }
+  });
+}
+
+function renderHistory(rows) {
+  set('histCnt', rows.length);
+  const wrap = $id('histTableWrap');
+  if (rows.length === 0) {
+    wrap.innerHTML = '<div style="padding:20px 0;text-align:center;color:var(--muted)">近60日無注意股記錄</div>';
+    return;
+  }
+
+  // Extract clause tags from reason text
+  function extractTags(reason) {
+    const clean = stripHtml(reason);
+    const tags = [];
+    const matches = clean.matchAll(/第[一二三四五六七八九十]+款/g);
+    for (const m of matches) tags.push(m[0]);
+    return [...new Set(tags)];
+  }
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>收盤價</th>
+          <th>觸發款項</th>
+          <th>注意原因摘要</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const row of rows) {
+    const date   = row[5];   // "115.05.27"
+    const close  = parseFloat(row[6]).toFixed(2);
+    const reason = row[4];
+    const tags   = extractTags(reason);
+    const tagHtml = tags.map(t => `<span class="tag">${t}</span>`).join('');
+    const shortReason = stripHtml(reason).substring(0, 80) + (reason.length > 80 ? '…' : '');
+
+    html += `
+      <tr>
+        <td style="white-space:nowrap;font-weight:600">${date}</td>
+        <td>NT$${close}</td>
+        <td style="white-space:nowrap">${tagHtml || '—'}</td>
+        <td style="font-size:12px;color:var(--muted)">${shortReason}</td>
+      </tr>`;
+  }
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════
+// Main search
+// ═══════════════════════════════════════════════
+// 頁面載入時：file:// 直接開啟則顯示警告
+(function checkEnv() {
+  if (IS_FILE) {
+    $id('corsWarning').classList.remove('hidden');
+    $id('searchBtn').disabled = true;
+    $id('searchBtn').title = '請先透過 啟動查詢系統.bat 開啟，或部署至伺服器';
+  }
+})();
+
+async function doSearch() {
+  const code = $id('codeInput').value.trim();
+  if (!code) return;
+
+  // Reset
+  $id('resultsDiv').classList.add('hidden');
+  $id('errorDiv').classList.add('hidden');
+  $id('loadingDiv').classList.remove('hidden');
+  $id('searchBtn').disabled = true;
+
+  try {
+    set('loadingMsg', '① 載入股價歷史資料中（3個月）…');
+    const { data: dailyData, name: stockName } = await getDailyData(code);
+
+    if (dailyData.length === 0) {
+      throw new Error(
+        `查無股票代碼「${code}」的資料。\n` +
+        `請確認：(1) 代碼是否為上市股票 (2) 代碼格式正確（4~6位數字）`
+      );
+    }
+
+    set('loadingMsg', '② 載入注意股歷史記錄（近60日）…');
+    const noticeRows = await getNoticeHistory(code);
+
+    set('loadingMsg', '③ 載入目前處置股名單…');
+    const disposalList = await getDisposalList();
+
+    set('loadingMsg', '④ 分析計算中…');
+    const metrics = analyse(code, dailyData, noticeRows, disposalList);
+
+    if (!metrics) {
+      throw new Error('資料日數不足（需至少6個交易日），無法計算。');
+    }
+
+    renderUI(code, stockName, metrics);
+
+    $id('loadingDiv').classList.add('hidden');
+    $id('resultsDiv').classList.remove('hidden');
+    $id('resultsDiv').scrollIntoView({ behavior: 'smooth' });
+
+  } catch (err) {
+    console.error(err);
+    $id('loadingDiv').classList.add('hidden');
+    $id('errorDiv').classList.remove('hidden');
+    $id('errorDiv').innerHTML =
+      `<strong>❌ 查詢失敗</strong><br>${err.message}<br><br>` +
+      `<small>建議使用 Chrome / Edge 瀏覽器，並確認網路連線正常。</small>`;
+  }
+
+  $id('searchBtn').disabled = false;
+}
+</script>
+</body>
+</html>
