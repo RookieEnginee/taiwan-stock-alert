@@ -518,10 +518,11 @@
 // ═══════════════════════════════════════════════
 // Autocomplete
 // ═══════════════════════════════════════════════
-let stockList  = null;   // [{code, name}]
+let stockList  = null;   // [{code, name, market}]
 let acActive   = -1;     // keyboard-highlighted index
 let acTimer    = null;
 let acBlurTimer= null;
+let currentMarket = 'TSE';   // 'TSE' or 'OTC'
 
 async function acLoadList() {
   if (stockList !== null) return;
@@ -529,16 +530,39 @@ async function acLoadList() {
   const dd = document.getElementById('acDropdown');
   dd.innerHTML = '<div class="ac-loading">載入股票清單中…</div>';
   dd.classList.add('open');
-  try {
-    const url = IS_FILE
-      ? 'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&selectType=ALL'
-      : '/proxy/stocklist?response=json&selectType=ALL';
-    const r = await fetch(url, { cache: 'force-cache' });
-    const d = await r.json();
-    if (d.stat === 'OK' && d.data) {
-      stockList = d.data.map(row => ({ code: row[0].trim(), name: row[1].trim() }));
-    }
-  } catch(e) { stockList = []; }
+
+  const results = await Promise.allSettled([
+    // 上市（TSE）清單
+    (async () => {
+      const url = IS_FILE
+        ? 'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&selectType=ALL'
+        : '/proxy/stocklist?response=json&selectType=ALL';
+      const r = await fetch(url, { cache: 'force-cache' });
+      if (!r.ok) return [];
+      let d;
+      try { d = await r.json(); } catch(e) { return []; }
+      if (d.stat === 'OK' && d.data) {
+        return d.data.map(row => ({ code: row[0].trim(), name: row[1].trim(), market: 'TSE' }));
+      }
+      return [];
+    })(),
+    // 上櫃（OTC）清單（透過本地快取端點）
+    (async () => {
+      if (IS_FILE) return [];
+      const r = await fetch('/tpex/stocklist', { cache: 'force-cache' });
+      if (!r.ok) return [];
+      const d = await r.json();
+      return Array.isArray(d) ? d.map(s => ({ code: s.code, name: s.name, market: 'OTC' })) : [];
+    })()
+  ]);
+
+  const tseList = results[0].status === 'fulfilled' ? results[0].value : [];
+  const otcList = results[1].status === 'fulfilled' ? results[1].value : [];
+
+  // 合併：TSE 優先，OTC 補充（去除代碼重複）
+  const seen = new Set(tseList.map(s => s.code));
+  stockList = [...tseList, ...otcList.filter(s => !seen.has(s.code))];
+
   acRender(document.getElementById('codeInput').value.trim());
 }
 
@@ -565,15 +589,17 @@ function acRender(q) {
 
   acActive = -1;
   dd.innerHTML = hits.map((s, i) => `
-    <div class="ac-item" data-code="${s.code}" data-idx="${i}"
-         onmousedown="acPick('${s.code}')">
+    <div class="ac-item" data-code="${s.code}" data-market="${s.market||'TSE'}" data-idx="${i}"
+         onmousedown="acPick('${s.code}','${s.market||'TSE'}')">
       <span class="ac-code">${acHighlight(s.code, q)}</span>
       <span class="ac-name">${acHighlight(s.name, q)}</span>
+      <span class="ac-market ${s.market==='OTC'?'ac-otc':'ac-tse'}">${s.market==='OTC'?'上櫃':'上市'}</span>
     </div>`).join('');
   dd.classList.add('open');
 }
 
-function acPick(code) {
+function acPick(code, market) {
+  currentMarket = market || 'TSE';
   document.getElementById('codeInput').value = code;
   document.getElementById('acDropdown').classList.remove('open');
   doSearch();
@@ -618,7 +644,7 @@ function acOnKeyDown(e) {
     acSetActive(items);
   } else if (e.key === 'Enter') {
     if (acActive >= 0 && items[acActive]) {
-      acPick(items[acActive].dataset.code);
+      acPick(items[acActive].dataset.code, items[acActive].dataset.market);
     } else {
       dd.classList.remove('open');
       doSearch();
@@ -631,7 +657,9 @@ function acOnKeyDown(e) {
 function acSetActive(items) {
   items.forEach((el, i) => el.classList.toggle('active', i === acActive));
   if (acActive >= 0 && items[acActive]) {
-    const code = items[acActive].dataset.code;
+    const code   = items[acActive].dataset.code;
+    const market = items[acActive].dataset.market || 'TSE';
+    currentMarket = market;
     document.getElementById('codeInput').value = code;
     items[acActive].scrollIntoView({ block: 'nearest' });
   }
@@ -692,6 +720,25 @@ function calcLimitUp(close)   { return tickFloor(close * 1.10); }
 // 跌停板 = ceil( close × 0.90 ) 到合法 tick
 function calcLimitDown(close) { return tickCeil(close * 0.90); }
 
+// ── 民國日期格式轉換（供 TPEx 資料使用）─────────────
+// "1150528" → "115.05.28"
+function rocDate8ToDot(s) {
+  const str = String(s || '').trim().padStart(7, '0');
+  return `${str.slice(0,3)}.${str.slice(3,5)}.${str.slice(5,7)}`;
+}
+// "1150528" → "115/05/28"
+function rocDate8ToSlash(s) {
+  const str = String(s || '').trim().padStart(7, '0');
+  return `${str.slice(0,3)}/${str.slice(3,5)}/${str.slice(5,7)}`;
+}
+// "1150423~1150507" → "115/04/23～115/05/07"
+function convertOTCPeriod(period) {
+  const parts = String(period || '').split('~');
+  if (parts.length < 2) return period || '';
+  const fmt = d => { const s=String(d).trim().padStart(7,'0'); return `${s.slice(0,3)}/${s.slice(3,5)}/${s.slice(5,7)}`; };
+  return `${fmt(parts[0])}～${fmt(parts[1])}`;
+}
+
 // ═══════════════════════════════════════════════
 // TWSE API calls  (透過本地代理伺服器呼叫，解決 CORS)
 // ═══════════════════════════════════════════════
@@ -715,8 +762,27 @@ function apiUrl(proxyPath, twsePath, params) {
 
 async function fetchJSON(url) {
   const r = await fetch(url, { cache: 'no-cache' });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const data = await r.json();
+  if (!r.ok) {
+    // 嘗試解析後端的 JSON 錯誤訊息
+    try {
+      const err = await r.json();
+      throw new Error(err.message || `HTTP ${r.status}`);
+    } catch(e) {
+      throw new Error(e.message || `HTTP ${r.status}`);
+    }
+  }
+  let data;
+  try {
+    data = await r.json();
+  } catch (e) {
+    // 回傳了非 JSON（如 HTML 攔截頁），先預覽前100字
+    const text = await r.clone ? '' : '';
+    throw new Error(
+      'API 回傳非 JSON 格式。\n' +
+      '可能原因：Render 伺服器 IP 被 TWSE 封鎖，或 TWSE 服務暫時中斷。\n' +
+      '請稍後再試，或改用台灣本地環境執行。'
+    );
+  }
   if (data.stat === 'ERROR') throw new Error(data.message || '伺服器回傳錯誤');
   return data;
 }
@@ -785,6 +851,87 @@ async function getDisposalList() {
   const url = apiUrl('/proxy/punish', '/announcement/punish', {});
   const d = await fetchJSON(url);
   return d.data || [];
+}
+
+// ── 上櫃（OTC）資料函式 ──────────────────────────
+// Yahoo Finance 歷史股價（透過後端 SQLite 快取）
+async function getOTCDailyData(code) {
+  const url = `/yf/history?code=${encodeURIComponent(code)}&market=OTC`;
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const arr = await r.json();
+  if (arr.error) throw new Error(arr.error);
+  if (!Array.isArray(arr) || arr.length === 0) return { data: [], name: '' };
+
+  const data = arr.map((item, i) => {
+    const parts = item.date.split('-');
+    const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    const prevClose = i > 0 ? arr[i - 1].close : item.close;
+    const chgVal = (item.close || 0) - prevClose;
+    const chgStr = chgVal > 0 ? `+${nf(chgVal)}` : nf(chgVal);
+    return {
+      date:   d,
+      vol:    item.volume || 0,
+      val:    0,
+      open:   item.open   || 0,
+      high:   item.high   || 0,
+      low:    item.low    || 0,
+      close:  item.close  || 0,
+      chgStr: chgStr,
+      trades: 0
+    };
+  });
+  return { data, name: '' };
+}
+
+// TPEx 注意股歷史（過濾指定代碼，轉成與 TWSE 相同的 row 格式）
+async function getOTCNoticeHistory(code) {
+  const r = await fetch('/tpex/notice', { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const arr = await r.json();
+  if (!Array.isArray(arr)) return { rows: [], name: '' };
+
+  let stockName = '';
+  const rows = arr
+    .filter(item => (item.SecuritiesCompanyCode || '').trim() === code)
+    .map(item => {
+      if (!stockName)
+        stockName = (item.CompanyName || item.SecuritiesCompanyName || '').trim();
+      // pseudo-row 對應 TSE row 格式：
+      // [4]=原因, [5]=日期"115.05.28", [6]=收盤價
+      const pseudo = new Array(10).fill('');
+      pseudo[4] = item.Reason || item.ReasonForWarning || '';
+      pseudo[5] = rocDate8ToDot(item.Date);
+      pseudo[6] = String(item.ClosePrice || item.ClosingPrice || '0');
+      return pseudo;
+    });
+
+  // 由新到舊排序（對齊 TWSE 行為）
+  rows.sort((a, b) => parseDateDot(b[5]) - parseDateDot(a[5]));
+  return { rows, name: stockName };
+}
+
+// TPEx 處置股清單（轉成與 TWSE 相同的 row 格式）
+async function getOTCDisposalList() {
+  const r = await fetch('/tpex/disposal', { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const arr = await r.json();
+  if (!Array.isArray(arr)) return [];
+
+  return arr.map(item => {
+    // pseudo-row 對應 TSE row 格式：
+    // [1]=公告日, [2]=代碼, [4]=第N次, [5]=原因,
+    // [6]=期間"115/04/23～115/05/07", [7]=措施, [8]=內容
+    const pseudo = new Array(10).fill('');
+    pseudo[1] = rocDate8ToSlash(item.Date);
+    pseudo[2] = (item.SecuritiesCompanyCode || '').trim();
+    pseudo[4] = item.DispositionNumber || '';
+    pseudo[5] = item.Reason || '';
+    pseudo[6] = item.DispositionPeriod ? convertOTCPeriod(item.DispositionPeriod) : '';
+    pseudo[7] = item.DispositionMeasure || '';
+    pseudo[8] = item.Content || '';
+    return pseudo;
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -952,7 +1099,7 @@ function renderUI(code, stockName, m) {
 
   // Stock header
   set('stkName', stockName || code);
-  set('stkCode', `股票代碼：${code}`);
+  set('stkCode', `股票代碼：${code}　${ currentMarket === 'OTC' ? '🟡 上櫃 OTC' : '🔵 上市 TSE' }`);
   set('closePrice', `NT$${nf(last.close)}`);
   set('tradeDate', `最後交易日：${fmtDate(last.date)}`);
 
@@ -1031,7 +1178,7 @@ function renderUI(code, stockName, m) {
   } else if (m.minNeed === 0) {
     set('cdText', '即將處置！');
     setStyle('cdText', 'color', 'var(--red)');
-    set('cdSub', '依 TWSE 公告已達觸發門檻，次日起執行處置');
+    set('cdSub', `依 ${currentMarket === 'OTC' ? 'TPEx' : 'TWSE'} 公告已達觸發門檻，次日起執行處置`);
   } else {
     set('cdText', `還差 ${m.minNeed} 天`);
     setStyle('cdText', 'color', routeColor(m.minNeed));
@@ -1142,16 +1289,17 @@ function renderRoutes(m) {
     fillEl.style.width = pct + '%';
     fillEl.className = 'route-fill ' + routeClass(need);
     setStyle(id + 'val', 'color', routeColor(need));
+    const exchName = currentMarket === 'OTC' ? 'TPEx' : 'TWSE';
     if (need === 0) {
       set(id + 'val', `⚠️ ${current}/${total} — 已達門檻！`);
       set(id + 'det',
-        `依 TWSE 公告已連續 ${current} 日：${dateStr}\n` +
+        `依 ${exchName} 公告已連續 ${current} 日：${dateStr}\n` +
         `次日（明日）起執行處置措施`);
     } else if (need === 1 && current > 0) {
       set(id + 'val', `${current} / ${total} ${unit}`);
       set(id + 'det',
         `已確認：${dateStr}\n` +
-        `⚠️ 若今日收盤後也被 TWSE 列入注意股，明日即觸發此路線`);
+        `⚠️ 若今日收盤後也被 ${exchName} 列入注意股，明日即觸發此路線`);
     } else {
       set(id + 'val', `${current} / ${total} ${unit}`);
       set(id + 'det',
@@ -1317,30 +1465,93 @@ function renderHistory(rows) {
   }
 })();
 
+// ── 上市（TSE）查詢 ──────────────────────────────
+async function doSearchTSE(code) {
+  set('loadingMsg', '① 載入上市股價歷史資料（TWSE）…');
+  const { data: dailyData, name: stockName } = await getDailyData(code);
+
+  if (dailyData.length === 0) {
+    throw new Error(
+      `查無上市股票「${code}」的資料。\n` +
+      `請確認代碼是否為上市股票，或嘗試以上櫃模式查詢。`
+    );
+  }
+
+  set('loadingMsg', '② 載入注意股歷史記錄（近60日）…');
+  const noticeRows = await getNoticeHistory(code);
+
+  set('loadingMsg', '③ 載入目前處置股名單…');
+  const disposalList = await getDisposalList();
+
+  set('loadingMsg', '④ 分析計算中…');
+  const metrics = analyse(code, dailyData, noticeRows, disposalList);
+  if (!metrics) throw new Error('資料日數不足（需至少6個交易日），無法計算。');
+
+  renderUI(code, stockName, metrics);
+  $id('loadingDiv').classList.add('hidden');
+  $id('resultsDiv').classList.remove('hidden');
+  $id('resultsDiv').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── 上櫃（OTC）查詢 ──────────────────────────────
+async function doSearchOTC(code) {
+  // 從已載入的清單取得股票名稱
+  const entry = (stockList || []).find(s => s.code === code && s.market === 'OTC');
+  let stockName = entry ? entry.name : '';
+
+  set('loadingMsg', '① 載入上櫃股價資料（Yahoo Finance）…');
+  const { data: dailyData, name: yfName } = await getOTCDailyData(code);
+  if (yfName && !stockName) stockName = yfName;
+
+  if (dailyData.length === 0) {
+    throw new Error(
+      `查無上櫃股票「${code}」的資料。\n` +
+      `請確認代碼是否為上櫃股票（4~5位數字）。`
+    );
+  }
+
+  set('loadingMsg', '② 載入注意股歷史記錄（TPEx）…');
+  const { rows: noticeRows, name: noticeName } = await getOTCNoticeHistory(code);
+  if (noticeName && !stockName) stockName = noticeName;
+
+  set('loadingMsg', '③ 載入處置股名單（TPEx）…');
+  const disposalList = await getOTCDisposalList();
+
+  set('loadingMsg', '④ 分析計算中…');
+  const metrics = analyse(code, dailyData, noticeRows, disposalList);
+  if (!metrics) throw new Error('資料日數不足（需至少6個交易日），無法計算。');
+
+  renderUI(code, stockName, metrics);
+  $id('loadingDiv').classList.add('hidden');
+  $id('resultsDiv').classList.remove('hidden');
+  $id('resultsDiv').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── 主查詢入口 ────────────────────────────────────
 async function doSearch() {
   let raw = $id('codeInput').value.trim();
   if (!raw) return;
 
-  // ── 中文 / 名稱 → 代碼轉換 ──────────────────────
-  // 若輸入不是純數字，嘗試從 stockList 查出對應代碼
+  // 確保股票清單已載入（名稱查詢與市場偵測都需要）
+  if (stockList === null) {
+    $id('loadingDiv').classList.remove('hidden');
+    set('loadingMsg', '載入股票清單中…');
+    await acLoadList();
+    $id('loadingDiv').classList.add('hidden');
+  }
+
   let code = raw;
+  let detectedMarket = null;
+
   if (!/^\d+$/.test(raw)) {
-    // 若股票清單尚未載入則先等待
-    if (stockList === null) {
-      $id('loadingDiv').classList.remove('hidden');
-      set('loadingMsg', '載入股票清單中…');
-      await acLoadList();
-      $id('loadingDiv').classList.add('hidden');
-    }
-    const q = raw.toLowerCase();
+    // 文字輸入：從合併清單查名稱
     const match = (stockList || []).find(s =>
-      s.name === raw ||            // 完全符合名稱
-      s.name.includes(raw) ||      // 名稱包含輸入文字
-      s.code === raw               // 也可能直接輸入代碼
+      s.name === raw || s.name.includes(raw) || s.code === raw
     );
     if (match) {
       code = match.code;
-      $id('codeInput').value = match.code; // 把輸入框換成代碼
+      detectedMarket = match.market;
+      $id('codeInput').value = match.code;
     } else {
       $id('errorDiv').classList.remove('hidden');
       $id('errorDiv').innerHTML =
@@ -1348,55 +1559,26 @@ async function doSearch() {
         `請確認名稱是否正確，或直接輸入股票代碼（如：2330）`;
       return;
     }
+  } else {
+    // 純數字：從清單偵測市場
+    const match = (stockList || []).find(s => s.code === code);
+    if (match) detectedMarket = match.market;
   }
 
-  // Reset
+  // 套用偵測到的市場（autocomplete 已點選的情況以 currentMarket 為準）
+  if (detectedMarket) currentMarket = detectedMarket;
+
   $id('resultsDiv').classList.add('hidden');
   $id('errorDiv').classList.add('hidden');
   $id('loadingDiv').classList.remove('hidden');
   $id('searchBtn').disabled = true;
 
   try {
-    set('loadingMsg', '① 載入股價歷史資料中（3個月）…');
-    const { data: dailyData, name: stockName } = await getDailyData(code);
-
-    if (dailyData.length === 0) {
-      throw new Error(
-        `查無股票代碼「${code}」的資料。\n` +
-        `請確認：(1) 代碼是否為上市股票 (2) 代碼格式正確（4~6位數字）`
-      );
-    }
-
-    set('loadingMsg', '② 載入注意股歷史記錄（近60日）…');
-    const noticeRows = await getNoticeHistory(code);
-
-    set('loadingMsg', '③ 載入目前處置股名單…');
-    const disposalList = await getDisposalList();
-
-    set('loadingMsg', '④ 分析計算中…');
-    const metrics = analyse(code, dailyData, noticeRows, disposalList);
-
-    if (!metrics) {
-      throw new Error('資料日數不足（需至少6個交易日），無法計算。');
-    }
-
-    renderUI(code, stockName, metrics);
-
-    $id('loadingDiv').classList.add('hidden');
-    $id('resultsDiv').classList.remove('hidden');
-    $id('resultsDiv').scrollIntoView({ behavior: 'smooth' });
-
-  } catch (err) {
-    console.error(err);
-    $id('loadingDiv').classList.add('hidden');
-    $id('errorDiv').classList.remove('hidden');
-    $id('errorDiv').innerHTML =
-      `<strong>❌ 查詢失敗</strong><br>${err.message}<br><br>` +
-      `<small>建議使用 Chrome / Edge 瀏覽器，並確認網路連線正常。</small>`;
-  }
-
-  $id('searchBtn').disabled = false;
-}
-</script>
-</body>
-</html>
+    if (currentMarket === 'OTC') {
+      await doSearchOTC(code);
+    } else {
+      // 預設 TSE；若查無資料且清單未偵測到市場，自動嘗試 OTC
+      try {
+        await doSearchTSE(code);
+      } catch (tseErr) {
+ 

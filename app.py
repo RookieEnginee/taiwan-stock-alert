@@ -97,6 +97,18 @@ TPEX_MAP  = {
 }
 
 
+# ── 全域例外攔截器：確保任何錯誤都回傳 JSON，不吐 HTML ──
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    traceback.print_exc()
+    return jsonify(stat='ERROR', message=f'伺服器內部錯誤：{str(e)}'), 500
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify(stat='ERROR', message='路徑不存在'), 404
+
+
 # ── 靜態頁面 ─────────────────────────────────────────
 @app.route('/')
 def index():
@@ -113,6 +125,13 @@ def twse_proxy(name):
     try:
         resp = requests.get(url, params=params, headers=TWSE_HEADERS, timeout=15)
         resp.raise_for_status()
+        # 驗證回傳確實是 JSON（TWSE 有時對海外 IP 回傳 HTML 攔截頁）
+        try:
+            resp.json()
+        except ValueError:
+            preview = resp.text[:200].replace('\n', ' ')
+            return jsonify(stat='ERROR',
+                           message=f'TWSE 回傳非 JSON 格式（可能封鎖海外 IP）。回應前200字：{preview}'), 502
         return Response(
             resp.content, status=200,
             content_type='application/json;charset=UTF-8',
@@ -134,6 +153,13 @@ def tpex_proxy(name):
     try:
         resp = requests.get(url, params=params, headers=TPEX_HEADERS, timeout=20)
         resp.raise_for_status()
+        # 驗證回傳確實是 JSON
+        try:
+            resp.json()
+        except ValueError:
+            preview = resp.text[:200].replace('\n', ' ')
+            return jsonify(stat='ERROR',
+                           message=f'TPEx 回傳非 JSON 格式。回應前200字：{preview}'), 502
         return Response(
             resp.content, status=200,
             content_type='application/json;charset=UTF-8',
