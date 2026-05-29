@@ -202,7 +202,7 @@ def fetch_tse_notice(days=30):
             'https://www.twse.com.tw/announcement/notice',
             params={
                 'response':  'json',
-                'querytype': '2',
+                'querytype': '1',
                 'startDate': start.strftime('%Y%m%d'),
                 'endDate':   end.strftime('%Y%m%d'),
             },
