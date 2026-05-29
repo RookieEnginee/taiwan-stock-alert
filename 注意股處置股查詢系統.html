@@ -523,6 +523,7 @@ let acActive   = -1;     // keyboard-highlighted index
 let acTimer    = null;
 let acBlurTimer= null;
 let currentMarket = 'TSE';   // 'TSE' or 'OTC'
+let otcListPromise = null;   // Promise for OTC background load (so it can be awaited)
 
 async function acLoadList() {
   if (stockList !== null) return;
@@ -555,20 +556,30 @@ async function acLoadList() {
   stockList = [...tseList];
   acRender(document.getElementById('codeInput').value.trim());
 
-  // ── Step 2：在背景靜默載入 OTC 清單（不阻塞後續操作）──
-  if (!IS_FILE) {
-    (async () => {
+  // ── Step 2：載入 OTC 清單，保存 Promise 供需要時 await ──
+  // file:// 模式也嘗試直連 TPEx（可能被 CORS 擋，失敗就靜默略過）
+  {
+    otcListPromise = (async () => {
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 20000);
-        const r = await fetch('/tpex/stocklist', { cache: 'force-cache', signal: ctrl.signal });
+        // file:// 模式直連 TPEx OpenAPI；一般模式走本地代理
+        const otcUrl = IS_FILE
+          ? 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'
+          : '/tpex/stocklist';
+        const r = await fetch(otcUrl, { cache: 'force-cache', signal: ctrl.signal });
         clearTimeout(timer);
         if (!r.ok) return;
         const d = await r.json();
         if (Array.isArray(d)) {
-          const otcList = d.map(s => ({ code: s.code, name: s.name, market: 'OTC' }));
+          const otcList = d.map(s => ({
+            code: (s.code || s.SecuritiesCompanyCode || '').trim(),
+            name: (s.name || s.CompanyName || '').trim(),
+            market: 'OTC'
+          })).filter(s => s.code && s.name);
           // 合併至現有清單（避免重複代碼）
           stockList = [...stockList, ...otcList.filter(s => !seen.has(s.code))];
+          acRender(document.getElementById('codeInput').value.trim());
         }
       } catch(_) { /* OTC 清單失敗靜默忽略 */ }
     })();
@@ -867,18 +878,63 @@ async function getDisposalList() {
 }
 
 // ── 上櫃（OTC）資料函式 ──────────────────────────
-// Yahoo Finance 歷史股價（透過後端 SQLite 快取）
+// Yahoo Finance 歷史股價
+// - 一般模式（有 server）：透過後端 SQLite 快取
+// - file:// 模式：直接呼叫 Yahoo Finance API（需瀏覽器允許 CORS）
 async function getOTCDailyData(code) {
-  const url = `/yf/history?code=${encodeURIComponent(code)}&market=OTC`;
-  const r = await fetch(url, { cache: 'no-cache' });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const arr = await r.json();
-  if (arr.error) throw new Error(arr.error);
-  if (!Array.isArray(arr) || arr.length === 0) return { data: [], name: '' };
+  let arr;
+
+  if (IS_FILE) {
+    // file:// 直連 Yahoo Finance
+    const symbol = encodeURIComponent(code + '.TWO');
+    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`;
+    let r;
+    try {
+      r = await fetch(yfUrl, { cache: 'no-cache' });
+    } catch (e) {
+      throw new Error(
+        `file:// 模式下無法取得上櫃股價資料（Yahoo Finance 可能封鎖直連請求）。\n` +
+        `請改用 Python server 開啟（雙擊「一鍵部署.bat」），再重新查詢。`
+      );
+    }
+    if (!r.ok) throw new Error(`Yahoo Finance HTTP ${r.status}`);
+    const json = await r.json();
+    const result = ((json.chart || {}).result || [])[0];
+    if (!result) return { data: [], name: '' };
+    const timestamps = result.timestamp || [];
+    const q = ((result.indicators || {}).quote || [{}])[0];
+    arr = timestamps.map((ts, i) => ({
+      date:   new Date(ts * 1000).toISOString().slice(0, 10),
+      open:   (q.open   || [])[i] != null ? +((q.open  [i]||0).toFixed(2)) : 0,
+      high:   (q.high   || [])[i] != null ? +((q.high  [i]||0).toFixed(2)) : 0,
+      low:    (q.low    || [])[i] != null ? +((q.low   [i]||0).toFixed(2)) : 0,
+      close:  (q.close  || [])[i] != null ? +((q.close [i]||0).toFixed(2)) : 0,
+      volume: (q.volume || [])[i] || 0,
+    })).filter(item => item.close);
+  } else {
+    // 一般模式：透過後端快取
+    const url = `/yf/history?code=${encodeURIComponent(code)}&market=OTC`;
+    let r;
+    try {
+      r = await fetch(url, { cache: 'no-cache' });
+    } catch (e) {
+      throw new Error(
+        `無法連線至本地 server（/yf/history）。\n` +
+        `請確認 Python server 正在執行，或雙擊「一鍵部署.bat」啟動。`
+      );
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const res = await r.json();
+    if (res.error) throw new Error(res.error);
+    if (!Array.isArray(res) || res.length === 0) return { data: [], name: '' };
+    arr = res;
+  }
 
   const data = arr.map((item, i) => {
-    const parts = item.date.split('-');
-    const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    const parts = (item.date || '').split('-');
+    const d = parts.length === 3
+      ? new Date(+parts[0], +parts[1] - 1, +parts[2])
+      : new Date(item.date);
     const prevClose = i > 0 ? arr[i - 1].close : item.close;
     const chgVal = (item.close || 0) - prevClose;
     const chgStr = chgVal > 0 ? `+${nf(chgVal)}` : nf(chgVal);
@@ -899,7 +955,12 @@ async function getOTCDailyData(code) {
 
 // TPEx 注意股歷史（過濾指定代碼，轉成與 TWSE 相同的 row 格式）
 async function getOTCNoticeHistory(code) {
-  const r = await fetch('/tpex/notice', { cache: 'no-cache' });
+  const noticeUrl = IS_FILE
+    ? 'https://www.tpex.org.tw/openapi/v1/tpex_trading_warning_information'
+    : '/tpex/notice';
+  let r;
+  try { r = await fetch(noticeUrl, { cache: 'no-cache' }); }
+  catch (_) { return { rows: [], name: '' }; }  // file:// CORS 失敗時靜默略過
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const arr = await r.json();
   if (!Array.isArray(arr)) return { rows: [], name: '' };
@@ -926,7 +987,12 @@ async function getOTCNoticeHistory(code) {
 
 // TPEx 處置股清單（轉成與 TWSE 相同的 row 格式）
 async function getOTCDisposalList() {
-  const r = await fetch('/tpex/disposal', { cache: 'no-cache' });
+  const disposalUrl = IS_FILE
+    ? 'https://www.tpex.org.tw/openapi/v1/tpex_disposal_information'
+    : '/tpex/disposal';
+  let r;
+  try { r = await fetch(disposalUrl, { cache: 'no-cache' }); }
+  catch (_) { return []; }  // file:// CORS 失敗時靜默略過
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const arr = await r.json();
   if (!Array.isArray(arr)) return [];
@@ -1554,8 +1620,14 @@ async function doSearch() {
       $id('loadingDiv').classList.remove('hidden');
       set('loadingMsg', '載入股票清單中…');
       await acLoadList();
-      $id('loadingDiv').classList.add('hidden');
     }
+    // 等待 OTC 清單也載入完成（文字查詢需要完整清單才能找到上櫃股票）
+    if (otcListPromise) {
+      set('loadingMsg', '載入上櫃股票清單中…');
+      await otcListPromise;
+    }
+    $id('loadingDiv').classList.add('hidden');
+
     const match = (stockList || []).find(s =>
       s.name === raw || s.name.includes(raw) || s.code === raw
     );
@@ -1571,10 +1643,16 @@ async function doSearch() {
       return;
     }
   } else {
-    // ── 純數字代碼：不等清單，直接查詢（清單若已載入則順便偵測市場）──
+    // ── 純數字代碼：清單若已載入則偵測市場，未載入則先嘗試 TSE 再 fallback OTC ──
     if (stockList && stockList.length > 0) {
       const match = stockList.find(s => s.code === code);
       if (match) detectedMarket = match.market;
+      // 若清單有 TSE 但 OTC 可能尚未載入，且未偵測到市場，等待 OTC
+      if (!detectedMarket && otcListPromise) {
+        await otcListPromise;
+        const otcMatch = stockList.find(s => s.code === code);
+        if (otcMatch) detectedMarket = otcMatch.market;
+      }
     }
   }
 
@@ -1589,11 +1667,11 @@ async function doSearch() {
     if (currentMarket === 'OTC') {
       await doSearchOTC(code);
     } else {
-      // 預設 TSE；若查無資料且清單尚未載入（未知市場），自動 fallback 至 OTC
+      // 預設 TSE；若查無資料，自動 fallback 至 OTC（不論是否已偵測市場）
       try {
         await doSearchTSE(code);
       } catch (tseErr) {
-        if (!detectedMarket && tseErr.message.includes('查無')) {
+        if (tseErr.message.includes('查無')) {
           currentMarket = 'OTC';
           await doSearchOTC(code);
         } else {
