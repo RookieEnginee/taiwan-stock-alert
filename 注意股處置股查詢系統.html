@@ -542,7 +542,7 @@ async function _doAcLoad() {
     // ① 優先從 DB 取（Render 部署時 TWSE 可能封鎖海外 IP）
     if (!IS_FILE) {
       try {
-        const r = await fetch('/db/stocklist?market=TSE', { cache: 'force-cache' });
+        const r = await fetch('/db/stocklist?market=TSE', { cache: 'no-cache' });
         if (r.ok) {
           const d = await r.json();
           if (Array.isArray(d) && d.length > 0)
@@ -570,7 +570,7 @@ async function _doAcLoad() {
     // ① 優先從 DB 取
     if (!IS_FILE) {
       try {
-        const r = await fetch('/db/stocklist?market=OTC', { cache: 'force-cache' });
+        const r = await fetch('/db/stocklist?market=OTC', { cache: 'no-cache' });
         if (r.ok) {
           const d = await r.json();
           if (Array.isArray(d) && d.length > 0)
