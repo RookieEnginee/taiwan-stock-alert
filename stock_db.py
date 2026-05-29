@@ -310,15 +310,31 @@ def fetch_tse_month_prices(code, year, month):
 # OTC（上櫃）資料抓取
 # ═══════════════════════════════════════════════
 
-def fetch_otc_notice():
-    """抓取 TPEx 注意股記錄（OpenAPI 回傳近60日）"""
+def fetch_otc_notice(days=30):
+    """
+    抓取 TPEx 注意股記錄（支援日期範圍，近 days 天）
+    URL: /www/zh-tw/bulletin/attention?startDate=YYYY/MM/DD&endDate=YYYY/MM/DD&response=json
+    欄位: [序號, 代號, 名稱, 累計, 原因, 發生日"115/05/29", 收盤, 本益比, link]
+    回傳 list of rows
+    """
+    today = datetime.now()
+    start = today - timedelta(days=days)
     try:
         r = requests.get(
-            f'{TPEX_BASE}/tpex_trading_warning_information',
+            'https://www.tpex.org.tw/www/zh-tw/bulletin/attention',
+            params={
+                'startDate': start.strftime('%Y/%m/%d'),
+                'endDate':   today.strftime('%Y/%m/%d'),
+                'code': '', 'cate': '', 'type': 'all',
+                'order': 'date', 'id': '', 'response': 'json',
+            },
             headers=TPEX_HEADERS, timeout=20, verify=False
         )
         r.raise_for_status()
-        return r.json()
+        d = r.json()
+        tables = d.get('tables', [])
+        if tables and tables[0].get('data'):
+            return tables[0]['data']
     except Exception as e:
         print(f'  [OTC notice] 失敗: {e}')
     return []
@@ -659,18 +675,21 @@ def update_all(verbose=True):
     log(f'  → {stats["tse_disposal"]} 筆，{len(tse_disp_codes)} 支股票')
 
     # ── Step 3：OTC 注意股 ─────────────────────
-    log('\n[3/6] OTC 注意股（TPEx）...')
+    log('\n[3/6] OTC 注意股（TPEx，近30日）...')
     otc_n_stocks, otc_n_rows = [], []
-    for item in fetch_otc_notice():
-        code = str(item.get('SecuritiesCompanyCode', '')).strip()
+    for row in fetch_otc_notice(days=30):
+        # row: [序號, 代號, 名稱, 累計, 原因, 發生日"115/05/29", 收盤, 本益比, link]
+        if len(row) < 7:
+            continue
+        code = str(row[1]).strip()
         if len(code) != 4 or not code.isdigit():
             continue
-        name      = str(item.get('CompanyName', item.get('SecuritiesCompanyName', ''))).strip()
-        date      = roc8_to_iso(item.get('Date', ''))
+        name      = str(row[2]).strip()
+        date      = roc_slash_to_iso(row[5])
         if not date:
             continue
-        reason    = str(item.get('Reason', item.get('ReasonForWarning', ''))).strip()
-        close_val = safe_float(item.get('ClosePrice', item.get('ClosingPrice', 0)))
+        reason    = str(row[4]).strip()
+        close_val = safe_float(row[6])
         otc_codes.add(code)
         otc_n_stocks.append((code, name, 'OTC', now_str))
         otc_n_rows.append((code, name, 'OTC', date, reason, close_val))
@@ -932,18 +951,20 @@ if __name__ == '__main__':
         otc_codes = set()
 
         # OTC 注意股
-        print('\n[OTC] 注意股...')
+        print('\n[OTC] 注意股（近30日）...')
         otc_n_stocks, otc_n_rows = [], []
-        for item in fetch_otc_notice():
-            code = str(item.get('SecuritiesCompanyCode', '')).strip()
+        for row in fetch_otc_notice(days=30):
+            if len(row) < 7:
+                continue
+            code = str(row[1]).strip()
             if len(code) != 4 or not code.isdigit():
                 continue
-            name      = str(item.get('CompanyName', item.get('SecuritiesCompanyName', ''))).strip()
-            date      = roc8_to_iso(item.get('Date', ''))
+            name      = str(row[2]).strip()
+            date      = roc_slash_to_iso(row[5])
             if not date:
                 continue
-            reason    = str(item.get('Reason', item.get('ReasonForWarning', ''))).strip()
-            close_val = safe_float(item.get('ClosePrice', item.get('ClosingPrice', 0)))
+            reason    = str(row[4]).strip()
+            close_val = safe_float(row[6])
             otc_codes.add(code)
             otc_n_stocks.append((code, name, 'OTC', now_str))
             otc_n_rows.append((code, name, 'OTC', date, reason, close_val))
