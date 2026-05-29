@@ -751,7 +751,14 @@ def update_all(verbose=True):
 
     # ── Step 5+6：全市場股價（TSE MI_INDEX + OTC bulk，每日僅 2 次 API）──
     log('\n[5/6] 全市場股價歷史（TSE + OTC 批次抓取）...')
-    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=90)
+    # 若 DB 已有 60 個交易日資料，只補最近 7 個日曆天（涵蓋週末 buffer）
+    # 若不足則做一次完整 90 天補齊
+    existing_trade_days = conn.execute(
+        "SELECT COUNT(DISTINCT date) FROM daily_price WHERE market='TSE'"
+    ).fetchone()[0]
+    fetch_days = 7 if existing_trade_days >= 60 else 90
+    log(f'  DB 現有 {existing_trade_days} 個交易日 → 抓取最近 {fetch_days} 個日曆天')
+    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=fetch_days)
 
     # 批次寫入股票名稱（供自動完成使用）
     now_str = datetime.now().isoformat()
