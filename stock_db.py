@@ -346,32 +346,42 @@ def iso_to_roc7(iso_date):
 
 def fetch_otc_daily_all(iso_date):
     """
-    抓取 TPEx tpex_mainboard_daily_close_quotes 單日所有上櫃股票行情
+    抓取 TPEx 單日所有上櫃股票行情（支援歷史日期）
+    URL: /www/zh-tw/afterTrading/dailyQuotes?date=YYYY/MM/DD&response=json
+    欄位: [0]代號 [1]名稱 [2]收盤 [3]漲跌 [4]開盤 [5]最高 [6]最低 [8]成交量(股)
     回傳 dict: {code → {date, open, high, low, close, volume, change}}
     若非交易日（無資料）則回傳空 dict
     """
-    roc_date = iso_to_roc7(iso_date)
-    url = f'{TPEX_BASE}/tpex_mainboard_daily_close_quotes?date={roc_date}'
+    # 轉成 YYYY/MM/DD 格式（西元年，此 API 用西元年不用民國年）
+    greg_date = iso_date.replace('-', '/')
     try:
-        r = requests.get(url, headers=TPEX_HEADERS, timeout=20, verify=False)
+        r = requests.get(
+            'https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes',
+            params={'date': greg_date, 'id': '', 'response': 'json'},
+            headers=TPEX_HEADERS, timeout=20, verify=False
+        )
         r.raise_for_status()
-        data = r.json()
-        if not isinstance(data, list) or not data:
+        d = r.json()
+        tables = d.get('tables', [])
+        if not tables or not tables[0].get('data'):
             return {}
+        rows = tables[0]['data']
         result = {}
-        for item in data:
-            code = str(item.get('SecuritiesCompanyCode', '')).strip()
+        for row in rows:
+            if len(row) < 9:
+                continue
+            code = str(row[0]).strip()
             if not (len(code) == 4 and code.isdigit()):
                 continue
             result[code] = {
-                'name':   str(item.get('CompanyName', '')).strip(),
+                'name':   str(row[1]).strip(),
                 'date':   iso_date,
-                'open':   safe_float(item.get('Open',   0)),
-                'high':   safe_float(item.get('High',   0)),
-                'low':    safe_float(item.get('Low',    0)),
-                'close':  safe_float(item.get('Close',  0)),
-                'volume': safe_int(item.get('TradingShares', 0)),
-                'change': safe_float(item.get('Change', 0)),
+                'close':  safe_float(row[2]),
+                'change': safe_float(row[3]),
+                'open':   safe_float(row[4]),
+                'high':   safe_float(row[5]),
+                'low':    safe_float(row[6]),
+                'volume': safe_int(str(row[8]).replace(',', '')) // 1000,  # 股→張
             }
         return result
     except Exception as e:
@@ -463,9 +473,7 @@ def fetch_all_prices_bulk(days=35):
         iso = target.strftime('%Y-%m-%d')
 
         tse_day = fetch_tse_daily_all(iso)
-        # TPEx daily quotes API 忽略 date 參數，永遠回傳最新一日資料
-        # 只在第一個交易日（今天）抓 OTC，避免寫入重複的假歷史價格
-        otc_day = fetch_otc_daily_all(iso) if offset == 0 else {}
+        otc_day = fetch_otc_daily_all(iso)
 
         if tse_day or otc_day:
             t_days += 1
