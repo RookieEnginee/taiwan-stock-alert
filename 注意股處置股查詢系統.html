@@ -476,10 +476,6 @@
           <div class="dinfo-val" id="dAnnDate">--</div>
         </div>
         <div class="dinfo-item">
-          <div class="dinfo-lbl">處置次數</div>
-          <div class="dinfo-val" id="dTimes">--</div>
-        </div>
-        <div class="dinfo-item">
           <div class="dinfo-lbl">處置原因</div>
           <div class="dinfo-val" id="dReason">--</div>
         </div>
@@ -1364,7 +1360,6 @@ function renderUI(code, stockName, m) {
     adCard.classList.remove('hidden');
     const row = m.activeDisposal;
     set('dAnnDate', row[1]);
-    set('dTimes',   `第 ${row[4]} 次`);
     set('dReason',  row[5]);
     set('dPeriod',  row[6]);
     set('dMeasure', row[7]);
