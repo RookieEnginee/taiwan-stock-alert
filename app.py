@@ -8,8 +8,9 @@
 import os
 import sqlite3
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, send_from_directory, request, Response, jsonify
+from cloud_db import open_db, using_turso
 
 app = Flask(__name__, static_folder='.')
 
@@ -70,14 +71,6 @@ TPEX_HEADERS = {
     ),
     'Referer': 'https://www.tpex.org.tw/',
     'Accept':  'application/json, text/plain, */*',
-}
-YF_HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/124.0.0.0 Safari/537.36'
-    ),
-    'Accept': 'application/json',
 }
 
 # ── TWSE API 對應表 ──────────────────────────────────
@@ -171,88 +164,135 @@ def tpex_proxy(name):
         return jsonify(stat='ERROR', message=str(e)), 502
 
 
-# ── Yahoo Finance 歷史股價（SQLite 快取 4 小時）─────────
+# ── OTC 股價歷史（Yahoo Finance .TWO，SQLite 快取 4 小時）──
+
+def _safe_float(s):
+    try:
+        return round(float(str(s).replace(',', '').strip()), 2)
+    except Exception:
+        return 0.0
+
+def _safe_int(s):
+    try:
+        return int(str(s).replace(',', '').strip())
+    except Exception:
+        return 0
+
+YF_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
+    ),
+}
+
+def _fetch_yf_otc(code, days=90):
+    """
+    從 Yahoo Finance v8 API 抓取上櫃個股歷史日K
+    上櫃股票 ticker 格式：{code}.TWO
+    回傳 list of {date, open, high, low, close, volume} 或 raise Exception
+    """
+    ticker = f'{code}.TWO'
+    url    = (f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}'
+              f'?interval=1d&range={days}d')
+    try:
+        r = requests.get(url, headers=YF_HEADERS, timeout=20)
+        r.raise_for_status()
+        payload = r.json()
+    except requests.exceptions.RequestException as e:
+        raise Exception(f'Yahoo Finance 連線失敗：{e}')
+
+    try:
+        result    = payload['chart']['result'][0]
+        timestamps = result['timestamp']
+        q          = result['indicators']['quote'][0]
+        opens      = q.get('open',   [])
+        highs      = q.get('high',   [])
+        lows       = q.get('low',    [])
+        closes     = q.get('close',  [])
+        volumes    = q.get('volume', [])
+    except (KeyError, IndexError, TypeError):
+        # 可能是 chart.error 存在（股票不存在）
+        err = payload.get('chart', {}).get('error')
+        if err:
+            raise Exception(f'Yahoo Finance 錯誤：{err.get("description", err)}')
+        raise Exception(f'Yahoo Finance 回傳格式異常')
+
+    rows = []
+    for i, ts in enumerate(timestamps):
+        c = closes[i] if i < len(closes) else None
+        if c is None:
+            continue
+        from datetime import date as _date, timezone as _tz
+        dt_obj  = _date.fromtimestamp(ts)
+        iso_dt  = dt_obj.strftime('%Y-%m-%d')
+        rows.append({
+            'date':   iso_dt,
+            'open':   _safe_float(opens[i]   if i < len(opens)   else c),
+            'high':   _safe_float(highs[i]   if i < len(highs)   else c),
+            'low':    _safe_float(lows[i]    if i < len(lows)    else c),
+            'close':  _safe_float(c),
+            'volume': _safe_int(volumes[i]   if i < len(volumes) else 0),
+        })
+    return rows
+
+
 @app.route('/yf/history')
 def yf_history():
+    """
+    取得上櫃個股近90日日K（供前端使用）
+    資料來源：Yahoo Finance（{code}.TWO）
+    快取策略：每筆日期資料永久保留；4 小時內重複查詢直接回快取
+    """
     code   = request.args.get('code', '').strip()
     market = request.args.get('market', 'TSE').upper()
     if not code:
         return jsonify({'error': 'code required'}), 400
+    if market != 'OTC':
+        return jsonify({'error': '此端點僅供上櫃（OTC）查詢'}), 400
 
-    suffix = '.TW' if market == 'TSE' else '.TWO'
-    symbol = code + suffix
-    now    = datetime.utcnow()
-    conn   = get_db()
+    now  = datetime.utcnow()
+    conn = get_db()
 
-    # 確認是否需要重新抓取（快取 4 小時）
-    row = conn.execute(
+    # 4 小時快取
+    cache_row = conn.execute(
         'SELECT fetched_at FROM yf_last_fetch WHERE code=? AND market=?',
         (code, market)
     ).fetchone()
 
     need_fetch = True
-    if row:
+    if cache_row:
         try:
-            last_dt = datetime.fromisoformat(row['fetched_at'])
-            if (now - last_dt).total_seconds() < 14400:
+            if (now - datetime.fromisoformat(cache_row['fetched_at'])).total_seconds() < 14400:
                 need_fetch = False
         except Exception:
             pass
 
     if need_fetch:
         try:
-            url  = (
-                f'https://query1.finance.yahoo.com/v8/finance/chart/{symbol}'
-                f'?range=3mo&interval=1d'
-            )
-            resp = requests.get(url, headers=YF_HEADERS, timeout=15)
-            resp.raise_for_status()
-            data   = resp.json()
-            result = (data.get('chart') or {}).get('result') or []
-
-            if result:
-                r          = result[0]
-                timestamps = r.get('timestamp') or []
-                q          = ((r.get('indicators') or {}).get('quote') or [{}])[0]
-                opens  = q.get('open')   or []
-                highs  = q.get('high')   or []
-                lows   = q.get('low')    or []
-                closes = q.get('close')  or []
-                vols   = q.get('volume') or []
-
-                to_ins = []
-                for i, ts in enumerate(timestamps):
-                    dt  = datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
-                    o   = opens[i]  if i < len(opens)  else None
-                    h   = highs[i]  if i < len(highs)  else None
-                    l   = lows[i]   if i < len(lows)   else None
-                    cl  = closes[i] if i < len(closes) else None
-                    vol = vols[i]   if i < len(vols)   else None
-                    if cl is not None:
-                        to_ins.append((
-                            code, market, dt,
-                            round(float(o),  2) if o  else None,
-                            round(float(h),  2) if h  else None,
-                            round(float(l),  2) if l  else None,
-                            round(float(cl), 2),
-                            int(vol) if vol else 0
-                        ))
-                if to_ins:
-                    conn.executemany(
-                        'INSERT OR REPLACE INTO yf_price '
-                        '(code,market,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?,?)',
-                        to_ins
-                    )
-
-            conn.execute(
-                'INSERT OR REPLACE INTO yf_last_fetch (code,market,fetched_at) VALUES (?,?,?)',
-                (code, market, now.isoformat())
-            )
+            fetched = _fetch_yf_otc(code, days=90)
+            if fetched:
+                conn.executemany(
+                    'INSERT OR REPLACE INTO yf_price '
+                    '(code,market,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?,?)',
+                    [(code, market, r['date'],
+                      r['open'], r['high'], r['low'], r['close'], r['volume'])
+                     for r in fetched]
+                )
+                print(f'[YF] {code}.TWO 取得 {len(fetched)} 個交易日')
+            # 僅在成功取到資料時才寫快取時間戳，避免失敗被鎖 4 小時
+            if fetched:
+                conn.execute(
+                    'INSERT OR REPLACE INTO yf_last_fetch (code,market,fetched_at) '
+                    'VALUES (?,?,?)',
+                    (code, market, now.isoformat())
+                )
             conn.commit()
         except Exception as e:
-            print(f'[YF] fetch error for {symbol}: {e}')
+            print(f'[YF] {code}.TWO 抓取失敗: {e}')
+            conn.close()
+            return jsonify({'error': str(e)}), 502
 
-    # 回傳快取資料
     rows = conn.execute(
         'SELECT date,open,high,low,close,volume FROM yf_price '
         'WHERE code=? AND market=? ORDER BY date',
@@ -261,7 +301,7 @@ def yf_history():
     conn.close()
 
     if not rows:
-        return jsonify({'error': f'查無 {code}（{market}）歷史資料'}), 404
+        return jsonify({'error': f'查無上櫃 {code} 歷史資料（請確認代碼正確，或此股票不在上櫃一般板）'}), 404
 
     out  = [{'date': r['date'], 'open': r['open'], 'high': r['high'],
               'low':  r['low'],  'close': r['close'], 'volume': r['volume']}
@@ -320,7 +360,177 @@ def tpex_stocklist():
     return resp
 
 
-# ── 啟動 ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+# ── 股市資料庫 API（stock_data.db）─────────────────────
+# ══════════════════════════════════════════════════════
+
+STOCK_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stock_data.db')
+
+def get_stock_db():
+    # Turso cloud DB 優先；否則用本機 stock_data.db
+    if using_turso():
+        return open_db(STOCK_DB_PATH)
+    if not os.path.exists(STOCK_DB_PATH):
+        return None
+    return open_db(STOCK_DB_PATH)
+
+
+@app.route('/db/status')
+def db_status():
+    """回傳 stock_data.db 最後更新狀態"""
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'ready': False, 'message': '資料庫尚未建立，請先執行 stock_db.py'}), 404
+    try:
+        log = conn.execute(
+            'SELECT updated_at, status, message FROM update_log ORDER BY id DESC LIMIT 1'
+        ).fetchone()
+        price_range = conn.execute(
+            'SELECT MIN(date) AS oldest, MAX(date) AS newest, COUNT(*) AS total FROM daily_price'
+        ).fetchone()
+        notice_cnt = conn.execute('SELECT COUNT(*) FROM notice_stocks').fetchone()[0]
+        disp_cnt   = conn.execute('SELECT COUNT(*) FROM disposition_stocks').fetchone()[0]
+        return jsonify({
+            'ready':        True,
+            'last_updated': log['updated_at'] if log else None,
+            'status':       log['status']     if log else None,
+            'summary':      log['message']    if log else None,
+            'price_oldest': price_range['oldest'],
+            'price_newest': price_range['newest'],
+            'price_total':  price_range['total'],
+            'notice_total': notice_cnt,
+            'disp_total':   disp_cnt,
+        })
+    finally:
+        conn.close()
+
+
+@app.route('/db/prices')
+def db_prices():
+    """
+    從 stock_data.db 取得指定股票的近60日收盤資料
+    ?code=2330&market=TSE
+    """
+    code   = request.args.get('code', '').strip()
+    market = request.args.get('market', 'TSE').upper()
+    if not code:
+        return jsonify({'error': 'code required'}), 400
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'error': '資料庫尚未建立'}), 404
+    try:
+        rows = conn.execute(
+            '''SELECT date, open, high, low, close, volume, change
+               FROM daily_price
+               WHERE code=? AND market=?
+               ORDER BY date
+               LIMIT 90''',
+            (code, market)
+        ).fetchall()
+        if not rows:
+            return jsonify({'error': f'DB 查無 {code}（{market}）股價資料'}), 404
+        out = [dict(r) for r in rows]
+        resp = jsonify(out)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
+@app.route('/db/notices')
+def db_notices():
+    """
+    從 stock_data.db 取得指定股票的注意股歷史
+    ?code=2330&market=TSE&days=60
+    """
+    code   = request.args.get('code', '').strip()
+    market = request.args.get('market', 'TSE').upper()
+    days   = int(request.args.get('days', 60))
+    if not code:
+        return jsonify({'error': 'code required'}), 400
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'error': '資料庫尚未建立'}), 404
+    try:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
+        rows = conn.execute(
+            '''SELECT date, name, reason, close
+               FROM notice_stocks
+               WHERE code=? AND market=? AND date >= ?
+               ORDER BY date DESC''',
+            (code, market, cutoff)
+        ).fetchall()
+        out = [dict(r) for r in rows]
+        resp = jsonify(out)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
+@app.route('/db/disposals')
+def db_disposals():
+    """
+    從 stock_data.db 取得指定股票的現行處置股記錄
+    ?code=2330&market=TSE
+    """
+    code   = request.args.get('code', '').strip()
+    market = request.args.get('market', 'TSE').upper()
+    if not code:
+        return jsonify({'error': 'code required'}), 400
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'error': '資料庫尚未建立'}), 404
+    try:
+        rows = conn.execute(
+            '''SELECT announce_date, start_date, end_date, reason, measure, content
+               FROM disposition_stocks
+               WHERE code=? AND market=?
+               ORDER BY announce_date DESC''',
+            (code, market)
+        ).fetchall()
+        out = [dict(r) for r in rows]
+        resp = jsonify(out)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
+@app.route('/db/all_notices')
+def db_all_notices():
+    """
+    回傳 DB 中所有注意股/處置股代碼清單（供前端判斷哪些股票在名單中）
+    ?market=TSE&days=60
+    """
+    market = request.args.get('market', '').upper()
+    days   = int(request.args.get('days', 60))
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'notices': [], 'disposals': []}), 200
+    try:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
+        notices = conn.execute(
+            'SELECT DISTINCT code, name, market FROM notice_stocks '
+            'WHERE date >= ? AND (market=? OR ?="") ORDER BY code',
+            (cutoff, market, market)
+        ).fetchall()
+        disposals = conn.execute(
+            'SELECT DISTINCT code, name, market FROM disposition_stocks '
+            'WHERE (market=? OR ?="") ORDER BY code',
+            (market, market)
+        ).fetchall()
+        resp = jsonify({
+            'notices':   [dict(r) for r in notices],
+            'disposals': [dict(r) for r in disposals],
+        })
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
+# -- Startup --
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8866))
     print(f'Server started: http://localhost:{port}')
