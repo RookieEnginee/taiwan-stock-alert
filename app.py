@@ -487,11 +487,11 @@ def db_prices():
 def db_notices():
     """
     從 stock_data.db 取得指定股票的注意股歷史
-    ?code=2330&market=TSE&days=60
+    ?code=2330&market=TSE&days=30
     """
     code   = request.args.get('code', '').strip()
     market = request.args.get('market', 'TSE').upper()
-    days   = int(request.args.get('days', 60))
+    days   = int(request.args.get('days', 30))
     if not code:
         return jsonify({'error': 'code required'}), 400
     conn = get_stock_db()
@@ -547,10 +547,10 @@ def db_disposals():
 def db_all_notices():
     """
     回傳 DB 中所有注意股/處置股代碼清單（供前端判斷哪些股票在名單中）
-    ?market=TSE&days=60
+    ?market=TSE&days=30
     """
     market = request.args.get('market', '').upper()
-    days   = int(request.args.get('days', 60))
+    days   = int(request.args.get('days', 30))
     conn = get_stock_db()
     if not conn:
         return jsonify({'notices': [], 'disposals': []}), 200

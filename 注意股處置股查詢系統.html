@@ -501,7 +501,7 @@
 
     <!-- Notice History Table -->
     <div class="history-card">
-      <div class="card-title">📋 近60日注意股記錄（共 <span id="histCnt">0</span> 筆）</div>
+      <div class="card-title">📋 近30日注意股記錄（共 <span id="histCnt">0</span> 筆）</div>
       <div id="histTableWrap">
         <div style="padding:20px 0; text-align:center; color:var(--muted)">查詢中…</div>
       </div>
@@ -888,7 +888,7 @@ async function getDailyData(code) {
 
 async function getNoticeHistory(code) {
   const today = new Date();
-  const start = new Date(today); start.setDate(start.getDate() - 60);
+  const start = new Date(today); start.setDate(start.getDate() - 30);
   const url = apiUrl(
     '/proxy/notice',
     '/announcement/notice',
@@ -1529,7 +1529,7 @@ function renderHistory(rows) {
   set('histCnt', rows.length);
   const wrap = $id('histTableWrap');
   if (rows.length === 0) {
-    wrap.innerHTML = '<div style="padding:20px 0;text-align:center;color:var(--muted)">近60日無注意股記錄</div>';
+    wrap.innerHTML = '<div style="padding:20px 0;text-align:center;color:var(--muted)">近30日無注意股記錄</div>';
     return;
   }
 
@@ -1644,7 +1644,7 @@ async function getDbPrices(code, market) {
 async function getDbNoticeRows(code, market) {
   if (IS_FILE) return null;
   try {
-    const r = await fetch(`/db/notices?code=${encodeURIComponent(code)}&market=${market}`,
+    const r = await fetch(`/db/notices?code=${encodeURIComponent(code)}&market=${market}&days=30`,
                           { cache: 'no-cache' });
     if (!r.ok) return null;
     const arr = await r.json();
@@ -1711,7 +1711,7 @@ async function doSearchTSE(code) {
   }
 
   // ② 注意股歷史：優先 DB，fallback TWSE
-  set('loadingMsg', '② 載入注意股歷史記錄（近60日）…');
+  set('loadingMsg', '② 載入注意股歷史記錄（近30日）…');
   let noticeRows = await getDbNoticeRows(code, 'TSE');
   if (!noticeRows) {
     noticeRows = await getNoticeHistory(code);
