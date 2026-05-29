@@ -575,9 +575,11 @@ def update_all(verbose=True):
         if len(row) < 6:
             continue
         code = str(row[1]).strip()
+        if len(code) != 4 or not code.isdigit():
+            continue
         name = str(row[2]).strip()
         date = roc_slash_to_iso(row[5])
-        if not code or not date:
+        if not date:
             continue
         reason    = str(row[4]).strip() if len(row) > 4 else ''
         close_val = safe_float(row[6]) if len(row) > 6 else 0.0
