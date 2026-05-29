@@ -924,6 +924,97 @@ if __name__ == '__main__':
         conn.commit()
         conn.close()
         print('測試插入成功！executemany 正常運作。')
+    elif '--otc' in args:
+        # 只跑 OTC 注意股、處置股、歷史股價（快速 debug 用）
+        init_db()
+        conn   = get_db()
+        now_str = datetime.now().isoformat()
+        otc_codes = set()
+
+        # OTC 注意股
+        print('\n[OTC] 注意股...')
+        otc_n_stocks, otc_n_rows = [], []
+        for item in fetch_otc_notice():
+            code = str(item.get('SecuritiesCompanyCode', '')).strip()
+            if len(code) != 4 or not code.isdigit():
+                continue
+            name      = str(item.get('CompanyName', item.get('SecuritiesCompanyName', ''))).strip()
+            date      = roc8_to_iso(item.get('Date', ''))
+            if not date:
+                continue
+            reason    = str(item.get('Reason', item.get('ReasonForWarning', ''))).strip()
+            close_val = safe_float(item.get('ClosePrice', item.get('ClosingPrice', 0)))
+            otc_codes.add(code)
+            otc_n_stocks.append((code, name, 'OTC', now_str))
+            otc_n_rows.append((code, name, 'OTC', date, reason, close_val))
+        if otc_n_stocks:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', otc_n_stocks)
+        if otc_n_rows:
+            conn.executemany('INSERT OR REPLACE INTO notice_stocks (code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)', otc_n_rows)
+        conn.commit()
+        print(f'  → {len(otc_n_rows)} 筆，{len(otc_codes)} 支股票')
+
+        # OTC 處置股
+        print('\n[OTC] 處置股...')
+        conn.execute("DELETE FROM disposition_stocks WHERE market='OTC'")
+        conn.commit()
+        otc_d_stocks, otc_d_rows = [], []
+        for item in fetch_otc_disposal():
+            code = str(item.get('SecuritiesCompanyCode', '')).strip()
+            name = str(item.get('CompanyName', '')).strip()
+            if not code:
+                continue
+            announce = roc8_to_iso(item.get('Date', ''))
+            period   = str(item.get('DispositionPeriod', ''))
+            sd = ed = ''
+            if '~' in period:
+                parts = period.split('~')
+                sd = roc8_to_iso(parts[0])
+                ed = roc8_to_iso(parts[1]) if len(parts) > 1 else ''
+            otc_codes.add(code)
+            otc_d_stocks.append((code, name, 'OTC', now_str))
+            otc_d_rows.append((code, name, 'OTC', announce, sd, ed,
+                               str(item.get('Reason', '')),
+                               str(item.get('DispositionMeasure', '')),
+                               str(item.get('Content', ''))))
+        if otc_d_stocks:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', otc_d_stocks)
+        if otc_d_rows:
+            conn.executemany('INSERT OR REPLACE INTO disposition_stocks (code,name,market,announce_date,start_date,end_date,reason,measure,content) VALUES (?,?,?,?,?,?,?,?,?)', otc_d_rows)
+        conn.commit()
+        print(f'  → {len(otc_d_rows)} 筆，{len(otc_d_stocks)} 支股票')
+
+        # OTC 歷史股價（近 35 天）
+        print('\n[OTC] 歷史股價（近35日）...')
+        today = datetime.now().date()
+        otc_all, otc_names = {}, {}
+        t_days = 0
+        for offset in range(35):
+            target = today - timedelta(days=offset)
+            if target.weekday() >= 5:
+                continue
+            iso = target.strftime('%Y-%m-%d')
+            day_data = fetch_otc_daily_all(iso)
+            if day_data:
+                t_days += 1
+                for code, data in day_data.items():
+                    otc_all.setdefault(code, []).append(data)
+                    if data.get('name') and code not in otc_names:
+                        otc_names[code] = data['name']
+            time.sleep(0.3)
+        print(f'  抓到 {t_days} 個交易日，{len(otc_all)} 支股票')
+
+        # 寫入名稱
+        name_rows = [(code, name, 'OTC', now_str) for code, name in otc_names.items() if name]
+        if name_rows:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', name_rows)
+            conn.commit()
+
+        # 批次寫入股價
+        n = bulk_insert_prices(conn, otc_all, 'OTC')
+        conn.commit()
+        conn.close()
+        print(f'  → 寫入 {n} 筆股價')
     else:
         init_db()
         update_all()
