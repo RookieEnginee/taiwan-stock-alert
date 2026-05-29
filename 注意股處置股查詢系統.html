@@ -1414,6 +1414,19 @@ function renderRoutes(m) {
       .map(d => `${d.getMonth()+1}/${d.getDate()}`).join('、');
   }
 
+  // 最近一筆注意日是否已是最新交易日（即「今日」已確認在注意股名單）
+  const latestNoticeDate   = m.noticeDatesForRoutes.length > 0 ? m.noticeDatesForRoutes[0] : null;
+  const todayAlreadyInList = latestNoticeDate &&
+    latestNoticeDate.toDateString() === m.last.date.toDateString();
+
+  // 下一個交易日的 M/D 標籤（推算：跳週末；不處理假日，顯示用）
+  function nextTradingDayLabel(fromDate) {
+    const d = new Date(fromDate);
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    return `${d.getMonth()+1}/${d.getDate()}`;
+  }
+
   // isConsecutive=true → 路線①②（連續天數）；false → 路線③④（滾動次數）
   function renderRoute(id, current, total, need, unit, dateStr, isConsecutive = false) {
     const pct = clamp(current / total * 100, 0, 100);
@@ -1427,12 +1440,20 @@ function renderRoutes(m) {
       const detLine = isConsecutive
         ? `依 ${exchName} 公告已連續 ${current} 日：${dateStr}`
         : `依 ${exchName} 公告近期已達 ${current} 次（${dateStr}）`;
-      set(id + 'det', `${detLine}\n次日（明日）起執行處置措施`);
+      set(id + 'det', `${detLine}\n次日起執行處置措施`);
     } else if (need === 1 && current > 0) {
       set(id + 'val', `${current} / ${total} ${unit}`);
-      set(id + 'det',
-        `已確認：${dateStr}\n` +
-        `⚠️ 若今日收盤後也被 ${exchName} 列入注意股，明日即觸發此路線`);
+      if (todayAlreadyInList) {
+        // 今日已確認在名單，下一個觀察日是下一個交易日
+        const nextDay = nextTradingDayLabel(m.last.date);
+        set(id + 'det',
+          `已確認：${dateStr}\n` +
+          `⚠️ 若 ${nextDay} 收盤後也被 ${exchName} 列入注意股，即觸發此路線`);
+      } else {
+        set(id + 'det',
+          `已確認：${dateStr}\n` +
+          `⚠️ 若今日收盤後也被 ${exchName} 列入注意股，明日即觸發此路線`);
+      }
     } else {
       set(id + 'val', `${current} / ${total} ${unit}`);
       set(id + 'det',
