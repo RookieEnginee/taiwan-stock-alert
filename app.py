@@ -416,7 +416,7 @@ def db_stocklist():
 
         resp = jsonify(out)
         resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Cache-Control'] = 'public, max-age=3600'  # 瀏覽器快取 1 小時
+        resp.headers['Cache-Control'] = 'public, max-age=900, stale-while-revalidate=3600'
         return resp
     finally:
         conn.close()
