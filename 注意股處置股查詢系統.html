@@ -1143,30 +1143,30 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   }
 
   // 連續注意股天數（以真實交易日曆判斷）
+  // 處置中時用 noticeDatesForRoutes（只含處置期間內的注意日期），
+  // 避免處置前的連續天數被帶入再次處置的計算
   let consecutive = 0;
-  for (let i = 0; i < noticeDates.length; i++) {
+  for (let i = 0; i < noticeDatesForRoutes.length; i++) {
     if (i === 0) { consecutive = 1; continue; }
-    if (areTradingConsecutive(noticeDates[i-1], noticeDates[i])) {
+    if (areTradingConsecutive(noticeDatesForRoutes[i-1], noticeDatesForRoutes[i])) {
       consecutive++;
     } else {
-      break; // 一旦不連續即中斷
+      break;
     }
   }
 
-  // ── 確認連續streak是否「仍在作用中」────────────────
-  // 若最後一次注意日到今日最新交易日之間，存在任何「有交易但沒列入注意股」的日子
-  // → 連續已被中斷，r1/r2 應歸零重算（路線③④滾動窗口不受影響）
+  // ── 確認連續streak是否「仍在作用中」──
   let streakIsLive = false;
-  if (consecutive > 0 && noticeDates.length > 0) {
-    const lastNotice   = noticeDates[0];   // 最近一次注意股日期
-    const lastTrading  = last.date;         // 最新交易日
-    const noticeDaySet = new Set(noticeDates.map(d => d.toDateString()));
+  if (consecutive > 0 && noticeDatesForRoutes.length > 0) {
+    const lastNotice   = noticeDatesForRoutes[0];
+    const lastTrading  = last.date;
+    const noticeDaySet = new Set(noticeDatesForRoutes.map(d => d.toDateString()));
     const cur = new Date(lastNotice);
     cur.setDate(cur.getDate() + 1);
     streakIsLive = true;
     while (cur <= lastTrading) {
       if (tradingDaySet.has(cur.toDateString()) && !noticeDaySet.has(cur.toDateString())) {
-        streakIsLive = false; // 有交易日但沒被列入注意股 → 連續中斷
+        streakIsLive = false;
         break;
       }
       cur.setDate(cur.getDate() + 1);
