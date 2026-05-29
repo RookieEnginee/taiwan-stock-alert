@@ -567,9 +567,11 @@ def update_all(verbose=True):
                   tse_price=0, otc_price=0)
     tse_codes = set()
     otc_codes = set()
+    now_str   = datetime.now().isoformat()
 
     # ── Step 1：TSE 注意股（全市場，近30日，單次 API）─────
     log('\n[1/6] TSE 注意股（TWSE，全市場近30日）...')
+    tse_n_stocks, tse_n_rows = [], []
     for row in fetch_tse_notice(days=30):
         # row: [編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
         if len(row) < 6:
@@ -577,27 +579,36 @@ def update_all(verbose=True):
         code = str(row[1]).strip()
         if len(code) != 4 or not code.isdigit():
             continue
-        name = str(row[2]).strip()
-        date = roc_slash_to_iso(row[5])
+        name      = str(row[2]).strip()
+        date      = roc_slash_to_iso(row[5])
         if not date:
             continue
         reason    = str(row[4]).strip() if len(row) > 4 else ''
         close_val = safe_float(row[6]) if len(row) > 6 else 0.0
         tse_codes.add(code)
-        upsert_stock(conn, code, name, 'TSE')
-        conn.execute(
+        tse_n_stocks.append((code, name, 'TSE', now_str))
+        tse_n_rows.append((code, name, 'TSE', date, reason, close_val))
+    if tse_n_stocks:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            tse_n_stocks
+        )
+    if tse_n_rows:
+        conn.executemany(
             'INSERT OR REPLACE INTO notice_stocks '
             '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
-            (code, name, 'TSE', date, reason, close_val)
+            tse_n_rows
         )
-        stats['tse_notice'] += 1
     conn.commit()
+    stats['tse_notice'] = len(tse_n_rows)
     log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
 
     # ── Step 2：TSE 處置股 ─────────────────────
     log('\n[2/6] TSE 處置股（TWSE）...')
     conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
+    conn.commit()
     tse_disp_codes = set()
+    tse_d_stocks, tse_d_rows = [], []
     for row in fetch_tse_disposal():
         # row: [序號, 公告日, 代碼, 名稱, 第N次, 原因, 期間, 措施, 內容]
         if len(row) < 4:
@@ -615,45 +626,64 @@ def update_all(verbose=True):
             ed = roc_slash_to_iso(parts[1]) if len(parts) > 1 else ''
         tse_disp_codes.add(code)
         tse_codes.add(code)
-        upsert_stock(conn, code, name, 'TSE')
-        conn.execute(
+        tse_d_stocks.append((code, name, 'TSE', now_str))
+        tse_d_rows.append((code, name, 'TSE', announce, sd, ed,
+                           str(row[5]) if len(row) > 5 else '',
+                           str(row[7]) if len(row) > 7 else '',
+                           str(row[8]) if len(row) > 8 else ''))
+    if tse_d_stocks:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            tse_d_stocks
+        )
+    if tse_d_rows:
+        conn.executemany(
             'INSERT OR REPLACE INTO disposition_stocks '
             '(code,name,market,announce_date,start_date,end_date,reason,measure,content) '
             'VALUES (?,?,?,?,?,?,?,?,?)',
-            (code, name, 'TSE', announce, sd, ed,
-             str(row[5]) if len(row) > 5 else '',
-             str(row[7]) if len(row) > 7 else '',
-             str(row[8]) if len(row) > 8 else '')
+            tse_d_rows
         )
-        stats['tse_disposal'] += 1
     conn.commit()
+    stats['tse_disposal'] = len(tse_d_rows)
     log(f'  → {stats["tse_disposal"]} 筆，{len(tse_disp_codes)} 支股票')
 
     # ── Step 3：OTC 注意股 ─────────────────────
     log('\n[3/6] OTC 注意股（TPEx）...')
+    otc_n_stocks, otc_n_rows = [], []
     for item in fetch_otc_notice():
         code = str(item.get('SecuritiesCompanyCode', '')).strip()
-        name = str(item.get('CompanyName', item.get('SecuritiesCompanyName', ''))).strip()
-        date = roc8_to_iso(item.get('Date', ''))
-        if not code or not date:
+        if len(code) != 4 or not code.isdigit():
+            continue
+        name      = str(item.get('CompanyName', item.get('SecuritiesCompanyName', ''))).strip()
+        date      = roc8_to_iso(item.get('Date', ''))
+        if not date:
             continue
         reason    = str(item.get('Reason', item.get('ReasonForWarning', ''))).strip()
         close_val = safe_float(item.get('ClosePrice', item.get('ClosingPrice', 0)))
         otc_codes.add(code)
-        upsert_stock(conn, code, name, 'OTC')
-        conn.execute(
+        otc_n_stocks.append((code, name, 'OTC', now_str))
+        otc_n_rows.append((code, name, 'OTC', date, reason, close_val))
+    if otc_n_stocks:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            otc_n_stocks
+        )
+    if otc_n_rows:
+        conn.executemany(
             'INSERT OR REPLACE INTO notice_stocks '
             '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
-            (code, name, 'OTC', date, reason, close_val)
+            otc_n_rows
         )
-        stats['otc_notice'] += 1
     conn.commit()
+    stats['otc_notice'] = len(otc_n_rows)
     log(f'  → {stats["otc_notice"]} 筆，{len(otc_codes)} 支股票')
 
     # ── Step 4：OTC 處置股 ─────────────────────
     log('\n[4/6] OTC 處置股（TPEx）...')
     conn.execute("DELETE FROM disposition_stocks WHERE market='OTC'")
+    conn.commit()
     otc_disp_codes = set()
+    otc_d_stocks, otc_d_rows = [], []
     for item in fetch_otc_disposal():
         code = str(item.get('SecuritiesCompanyCode', '')).strip()
         name = str(item.get('CompanyName', '')).strip()
@@ -668,18 +698,25 @@ def update_all(verbose=True):
             ed = roc8_to_iso(parts[1]) if len(parts) > 1 else ''
         otc_disp_codes.add(code)
         otc_codes.add(code)
-        upsert_stock(conn, code, name, 'OTC')
-        conn.execute(
+        otc_d_stocks.append((code, name, 'OTC', now_str))
+        otc_d_rows.append((code, name, 'OTC', announce, sd, ed,
+                           str(item.get('Reason', '')),
+                           str(item.get('DispositionMeasure', '')),
+                           str(item.get('Content', ''))))
+    if otc_d_stocks:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            otc_d_stocks
+        )
+    if otc_d_rows:
+        conn.executemany(
             'INSERT OR REPLACE INTO disposition_stocks '
             '(code,name,market,announce_date,start_date,end_date,reason,measure,content) '
             'VALUES (?,?,?,?,?,?,?,?,?)',
-            (code, name, 'OTC', announce, sd, ed,
-             str(item.get('Reason', '')),
-             str(item.get('DispositionMeasure', '')),
-             str(item.get('Content', '')))
+            otc_d_rows
         )
-        stats['otc_disposal'] += 1
     conn.commit()
+    stats['otc_disposal'] = len(otc_d_rows)
     log(f'  → {stats["otc_disposal"]} 筆，{len(otc_disp_codes)} 支股票')
 
     # ── Step 5+6：全市場股價（TSE MI_INDEX + OTC bulk，每日僅 2 次 API）──
