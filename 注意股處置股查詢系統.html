@@ -1093,11 +1093,39 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     .map(r => parseDateDot(r[5]))
     .sort((a,b) => b - a); // newest first
 
-  const tenDaysAgo    = new Date(today); tenDaysAgo.setDate(today.getDate() - 14);
-  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 42);
+  // ── Disposal status（需先算，才能決定 cnt10/cnt30 的計算方式）──
+  const todayMs = today.getTime();
+  let activeDisposal = null;
+  let disposalStart  = null;
+  const myEntries = disposalList.filter(r => r[2] === code);
+  for (const row of myEntries) {
+    const range = row[6] || '';
+    const parts = range.split('～');
+    if (parts.length !== 2) continue;
+    const s = parseDateSlash(parts[0].trim());
+    const e = parseDateSlash(parts[1].trim());
+    if (todayMs >= s.getTime() && todayMs <= e.getTime()) {
+      activeDisposal = row;
+      disposalStart  = s;
+      break;
+    }
+  }
 
-  const cnt10  = noticeDates.filter(d => d >= tenDaysAgo).length;
-  const cnt30  = noticeDates.filter(d => d >= thirtyDaysAgo).length;
+  // ── 路線③④ 計次邏輯 ──
+  // 處置中：從處置起始日重新起算（處置前的注意次數不併入再次處置門檻）
+  // 未處置：14/42 日曆天近似 10/30 個交易日
+  let cnt10, cnt30, noticeDatesForRoutes;
+  if (activeDisposal && disposalStart) {
+    noticeDatesForRoutes = noticeDates.filter(d => d >= disposalStart);
+    cnt10 = noticeDatesForRoutes.length;
+    cnt30 = noticeDatesForRoutes.length;
+  } else {
+    const tenDaysAgo    = new Date(today); tenDaysAgo.setDate(today.getDate() - 14);
+    const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 42);
+    noticeDatesForRoutes = noticeDates;
+    cnt10 = noticeDates.filter(d => d >= tenDaysAgo).length;
+    cnt30 = noticeDates.filter(d => d >= thirtyDaysAgo).length;
+  }
 
   // 建立實際交易日集合（用於判斷「真正連續」）
   const tradingDaySet = new Set(dailyData.map(d => d.date.toDateString()));
@@ -1147,21 +1175,6 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   // r1/r2 使用「作用中的連續天數」（中斷則視為 0）
   const liveConsecutive = streakIsLive ? consecutive : 0;
 
-  // ── Disposal status ──
-  const todayMs = today.getTime();
-  let activeDisposal = null;
-  const myEntries = disposalList.filter(r => r[2] === code);
-  for (const row of myEntries) {
-    const range = row[6] || ''; // "115/05/27～115/06/09"
-    const parts = range.split('～');
-    if (parts.length !== 2) continue;
-    const s = parseDateSlash(parts[0].trim());
-    const e = parseDateSlash(parts[1].trim());
-    if (todayMs >= s.getTime() && todayMs <= e.getTime()) {
-      activeDisposal = row; break;
-    }
-  }
-
   // ── Route needs ──
   // 路線①②用 liveConsecutive（中斷則歸零）
   // 路線③④用滾動窗口計次（不管連續與否）
@@ -1176,10 +1189,10 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     ret6d, diff6d, base6,
     avgVol60, volRatio,
     thr25, thr32, thrSafe, thrVol,
-    noticeDates, cnt10, cnt30,
+    noticeDates, noticeDatesForRoutes, cnt10, cnt30,
     consecutive, liveConsecutive, streakIsLive,
     noticeRows,
-    activeDisposal,
+    activeDisposal, disposalStart,
     r1need, r2need, r3need, r4need, minNeed
   };
 }
@@ -1395,9 +1408,9 @@ function renderRoutes(m) {
     card.className = 'routes-card routes-safe';
   }
 
-  // 把最近 N 個注意日期格式化成 "M/D" 串
-  function fmtNoticeDates(n) {
-    return m.noticeDates.slice(0, n)
+  // 把最近 N 個注意日期格式化成 "M/D" 串（arr 預設用全部注意日期）
+  function fmtNoticeDates(n, arr) {
+    return (arr || m.noticeDates).slice(0, n)
       .map(d => `${d.getMonth()+1}/${d.getDate()}`).join('、');
   }
 
@@ -1446,8 +1459,8 @@ function renderRoutes(m) {
     renderRoute('r1', m.liveConsecutive, 3, m.r1need, '天', consecStr, true);
     renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr, true);
   }
-  renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10),              false);
-  renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6)), false);
+  renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10,              m.noticeDatesForRoutes), false);
+  renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6), m.noticeDatesForRoutes), false);
 }
 
 function renderChart(data) {
