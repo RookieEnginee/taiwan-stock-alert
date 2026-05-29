@@ -1797,7 +1797,7 @@ async function doSearch() {
 
   // ── 文字輸入：需要股票清單做名稱對照 ──
   if (!/^\d+$/.test(raw)) {
-    if (stockList === null) {
+    if (!stockList || stockList.length === 0) {
       $id('loadingDiv').classList.remove('hidden');
       set('loadingMsg', '載入上市／上櫃股票清單中…');
       await acLoadList();   // 等上市+上櫃都完成（Promise.all）
