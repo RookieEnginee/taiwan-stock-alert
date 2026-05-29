@@ -463,7 +463,9 @@ def fetch_all_prices_bulk(days=35):
         iso = target.strftime('%Y-%m-%d')
 
         tse_day = fetch_tse_daily_all(iso)
-        otc_day = fetch_otc_daily_all(iso)
+        # TPEx daily quotes API 忽略 date 參數，永遠回傳最新一日資料
+        # 只在第一個交易日（今天）抓 OTC，避免寫入重複的假歷史價格
+        otc_day = fetch_otc_daily_all(iso) if offset == 0 else {}
 
         if tse_day or otc_day:
             t_days += 1

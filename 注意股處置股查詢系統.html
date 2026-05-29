@@ -1739,12 +1739,13 @@ async function doSearchOTC(code) {
   const entry = (stockList || []).find(s => s.code === code && s.market === 'OTC');
   let stockName = entry ? entry.name : '';
 
-  // ① 股價：優先 DB，fallback Yahoo Finance
+  // ① 股價：優先 DB（需 ≥ 6 天才夠分析），否則 fallback Yahoo Finance
   set('loadingMsg', '① 載入上櫃股價資料…');
   let dailyData = await getDbPrices(code, 'OTC');
+  if (dailyData && dailyData.length < 6) dailyData = null;  // DB 只有今日單筆，不夠分析
 
   if (!dailyData) {
-    set('loadingMsg', '① 從 TPEx 載入上櫃股價…');
+    set('loadingMsg', '① 從 Yahoo Finance 載入上櫃股價…');
     const result = await getOTCDailyData(code);
     dailyData = result.data;
     if (result.name && !stockName) stockName = result.name;
