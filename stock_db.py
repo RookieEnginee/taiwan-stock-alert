@@ -930,6 +930,102 @@ if __name__ == '__main__':
         conn.commit()
         conn.close()
         print(f'  → {len(tse_d_rows)} 筆，{len(tse_d_stocks)} 支股票')
+    elif '--tse' in args:
+        # 只跑 TSE 注意股、處置股、歷史股價（快速 debug 用）
+        init_db()
+        conn    = get_db()
+        now_str = datetime.now().isoformat()
+        tse_codes = set()
+
+        # TSE 注意股
+        print('\n[TSE] 注意股（近30日）...')
+        tse_n_stocks, tse_n_rows = [], []
+        for row in fetch_tse_notice(days=30):
+            if len(row) < 6:
+                continue
+            code = str(row[1]).strip()
+            if len(code) != 4 or not code.isdigit():
+                continue
+            name      = str(row[2]).strip()
+            date      = roc_slash_to_iso(row[5])
+            if not date:
+                continue
+            reason    = str(row[4]).strip() if len(row) > 4 else ''
+            close_val = safe_float(row[6]) if len(row) > 6 else 0.0
+            tse_codes.add(code)
+            tse_n_stocks.append((code, name, 'TSE', now_str))
+            tse_n_rows.append((code, name, 'TSE', date, reason, close_val))
+        if tse_n_stocks:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', tse_n_stocks)
+        if tse_n_rows:
+            conn.executemany('INSERT OR REPLACE INTO notice_stocks (code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)', tse_n_rows)
+        conn.commit()
+        print(f'  → {len(tse_n_rows)} 筆，{len(tse_codes)} 支股票')
+
+        # TSE 處置股
+        time.sleep(2)
+        print('\n[TSE] 處置股...')
+        conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
+        conn.commit()
+        tse_disp_codes = set()
+        tse_d_stocks, tse_d_rows = [], []
+        for row in fetch_tse_disposal():
+            if len(row) < 4:
+                continue
+            code = str(row[2]).strip()
+            name = str(row[3]).strip()
+            if not code:
+                continue
+            announce = roc_slash_to_iso(row[1]) if len(row) > 1 else ''
+            period   = str(row[6]) if len(row) > 6 else ''
+            sd = ed = ''
+            if '～' in period or '~' in period:
+                parts = period.replace('~', '～').split('～')
+                sd = roc_slash_to_iso(parts[0])
+                ed = roc_slash_to_iso(parts[1]) if len(parts) > 1 else ''
+            tse_disp_codes.add(code)
+            tse_codes.add(code)
+            tse_d_stocks.append((code, name, 'TSE', now_str))
+            tse_d_rows.append((code, name, 'TSE', announce, sd, ed,
+                               str(row[5]) if len(row) > 5 else '',
+                               str(row[7]) if len(row) > 7 else '',
+                               str(row[8]) if len(row) > 8 else ''))
+        if tse_d_stocks:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', tse_d_stocks)
+        if tse_d_rows:
+            conn.executemany('INSERT OR REPLACE INTO disposition_stocks (code,name,market,announce_date,start_date,end_date,reason,measure,content) VALUES (?,?,?,?,?,?,?,?,?)', tse_d_rows)
+        conn.commit()
+        print(f'  → {len(tse_d_rows)} 筆，{len(tse_disp_codes)} 支股票')
+
+        # TSE 歷史股價（近 35 天）
+        print('\n[TSE] 歷史股價（近35日）...')
+        today = datetime.now().date()
+        tse_all, tse_names = {}, {}
+        t_days = 0
+        for offset in range(35):
+            target = today - timedelta(days=offset)
+            if target.weekday() >= 5:
+                continue
+            iso = target.strftime('%Y-%m-%d')
+            day_data = fetch_tse_daily_all(iso)
+            if day_data:
+                t_days += 1
+                for code, data in day_data.items():
+                    tse_all.setdefault(code, []).append(data)
+                    if data.get('name') and code not in tse_names:
+                        tse_names[code] = data['name']
+            time.sleep(0.3)
+        print(f'  抓到 {t_days} 個交易日，{len(tse_all)} 支股票')
+
+        name_rows = [(code, name, 'TSE', now_str) for code, name in tse_names.items() if name]
+        if name_rows:
+            conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', name_rows)
+            conn.commit()
+
+        n = bulk_insert_prices(conn, tse_all, 'TSE')
+        conn.commit()
+        conn.close()
+        print(f'  → 寫入 {n} 筆股價')
     elif '--test-price' in args:
         # 快速測試：插入一筆假股價，驗證 executemany 是否正常
         init_db()
