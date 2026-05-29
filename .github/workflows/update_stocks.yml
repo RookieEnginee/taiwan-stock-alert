@@ -1,24 +1,21 @@
 name: Daily Stock Data Update
-
 on:
   schedule:
-    - cron: '30 12 * * 1-5'   # UTC 12:30 = 台灣 20:30，週一到週五
-  workflow_dispatch:            # 允許手動觸發
-
+    - cron: '30 12 * * 1-5'
+  workflow_dispatch:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: pip install requests
-
       - name: Update stock database
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
