@@ -567,6 +567,18 @@ async function _doAcLoad() {
   })();
 
   const otcFetch = (async () => {
+    // ① 優先從 DB 取
+    if (!IS_FILE) {
+      try {
+        const r = await fetch('/db/stocklist?market=OTC', { cache: 'force-cache' });
+        if (r.ok) {
+          const d = await r.json();
+          if (Array.isArray(d) && d.length > 0)
+            return d.map(s => ({ code: s.code, name: s.name || s.code, market: 'OTC' }));
+        }
+      } catch(_) {}
+    }
+    // ② fallback：TPEx / 直連
     try {
       const ctrl = new AbortController();
       setTimeout(() => ctrl.abort(), 20000);

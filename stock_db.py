@@ -190,28 +190,36 @@ def safe_int(s, default=0):
 # TSE（上市）資料抓取
 # ═══════════════════════════════════════════════
 
-def fetch_tse_notice(days=65):
-    """抓取 TWSE 注意股記錄（最近 days 天）"""
+def fetch_tse_notice_for_codes(codes, days=65):
+    """
+    針對指定代碼逐一查詢 TWSE 注意股記錄（querytype=2 + stockNo）
+    回傳格式：[序號, 代碼, 名稱, 累計, 原因, 日期, 收盤, PE]
+    """
     today = datetime.now()
+    end   = today - timedelta(days=1)
     start = today - timedelta(days=days)
-    params = {
-        'response':  'json',
-        'querytype': '2',
-        'startDate': start.strftime('%Y%m%d'),
-        'endDate':   today.strftime('%Y%m%d'),
-    }
-    try:
-        r = requests.get(
-            'https://www.twse.com.tw/announcement/notice',
-            params=params, headers=TWSE_HEADERS, timeout=20
-        )
-        r.raise_for_status()
-        d = r.json()
-        if d.get('stat') == 'OK' and d.get('data'):
-            return d['data']
-    except Exception as e:
-        print(f'  [TSE notice] 失敗: {e}')
-    return []
+    all_rows = []
+    for code in sorted(codes):
+        try:
+            r = requests.get(
+                'https://www.twse.com.tw/announcement/notice',
+                params={
+                    'response':  'json',
+                    'querytype': '2',
+                    'startDate': start.strftime('%Y%m%d'),
+                    'endDate':   end.strftime('%Y%m%d'),
+                    'stockNo':   code,
+                },
+                headers=TWSE_HEADERS, timeout=20
+            )
+            r.raise_for_status()
+            d = r.json()
+            if d.get('stat') == 'OK' and d.get('data'):
+                all_rows.extend(d['data'])
+            time.sleep(0.3)
+        except Exception as e:
+            print(f'  [TSE notice] {code} 失敗: {e}')
+    return all_rows
 
 
 def fetch_tse_disposal():
@@ -329,6 +337,7 @@ def fetch_otc_daily_all(iso_date):
             if not (len(code) == 4 and code.isdigit()):
                 continue
             result[code] = {
+                'name':   str(item.get('CompanyName', '')).strip(),
                 'date':   iso_date,
                 'open':   safe_float(item.get('Open',   0)),
                 'high':   safe_float(item.get('High',   0)),
@@ -389,6 +398,7 @@ def fetch_tse_daily_all(iso_date):
                 sign = 0
             chg = safe_float(str(row[10]).replace(',', '')) * sign
             result[code] = {
+                'name':   str(row[1]).strip(),
                 'date':   iso_date,
                 'open':   safe_float(str(row[5]).replace(',', '')),
                 'high':   safe_float(str(row[6]).replace(',', '')),
@@ -413,13 +423,15 @@ def fetch_all_prices_bulk(days=35):
       tse_data / otc_data: {code → [records sorted oldest→newest]}
     """
     today    = datetime.now().date()
-    tse_data = {}
-    otc_data = {}
-    t_days   = 0
+    tse_data  = {}
+    otc_data  = {}
+    tse_names = {}   # {code: name}
+    otc_names = {}
+    t_days    = 0
 
     for offset in range(days):
         target = today - timedelta(days=offset)
-        if target.weekday() >= 5:        # 跳過週末
+        if target.weekday() >= 5:
             continue
         iso = target.strftime('%Y-%m-%d')
 
@@ -431,8 +443,12 @@ def fetch_all_prices_bulk(days=35):
 
         for code, data in tse_day.items():
             tse_data.setdefault(code, []).append(data)
+            if data.get('name') and code not in tse_names:
+                tse_names[code] = data['name']
         for code, data in otc_day.items():
             otc_data.setdefault(code, []).append(data)
+            if data.get('name') and code not in otc_names:
+                otc_names[code] = data['name']
 
         time.sleep(0.3)
 
@@ -441,7 +457,7 @@ def fetch_all_prices_bulk(days=35):
             d[code].sort(key=lambda r: r['date'])
 
     print(f'  [全市場] {t_days} 個交易日｜TSE {len(tse_data)} 支｜OTC {len(otc_data)} 支')
-    return tse_data, otc_data
+    return tse_data, otc_data, tse_names, otc_names
 
 
 # ═══════════════════════════════════════════════
@@ -525,29 +541,10 @@ def update_all(verbose=True):
     tse_codes = set()
     otc_codes = set()
 
-    # ── Step 1：TSE 注意股 ─────────────────────
-    log('\n[1/6] TSE 注意股（TWSE）...')
-    for row in fetch_tse_notice():
-        # row: [序號, 日期, 代碼, 名稱, 原因, ...]
-        if len(row) < 4:
-            continue
-        code = str(row[2]).strip()
-        name = str(row[3]).strip()
-        date = roc_slash_to_iso(row[1])
-        if not code or not date:
-            continue
-        reason    = str(row[4]).strip() if len(row) > 4 else ''
-        close_val = safe_float(row[6]) if len(row) > 6 else 0.0
-        tse_codes.add(code)
-        upsert_stock(conn, code, name, 'TSE')
-        conn.execute(
-            'INSERT OR REPLACE INTO notice_stocks '
-            '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
-            (code, name, 'TSE', date, reason, close_val)
-        )
-        stats['tse_notice'] += 1
-    conn.commit()
-    log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
+    # ── Step 1：TSE 注意股（先跑處置股取得代碼，再逐一查注意史）─────
+    # 注意：TWSE 沒有全市場一次查的注意股 API，需逐支股票查詢
+    # 這裡先處理處置股（step 2），取得代碼後再查
+    log('\n[1/6] TSE 注意股（先取處置股代碼，再逐一查詢）...')
 
     # ── Step 2：TSE 處置股 ─────────────────────
     log('\n[2/6] TSE 處置股（TWSE）...')
@@ -583,6 +580,33 @@ def update_all(verbose=True):
         stats['tse_disposal'] += 1
     conn.commit()
     log(f'  → {stats["tse_disposal"]} 筆，{len(tse_disp_codes)} 支股票')
+
+    # ── Step 1 續：TSE 注意股（逐支處置股代碼查詢歷史）─────
+    # 回傳格式：[序號, 代碼, 名稱, 累計次數, 原因, 日期"115.05.28", 收盤, PE]
+    if tse_disp_codes:
+        log(f'\n[1/6] TSE 注意股（逐一查詢 {len(tse_disp_codes)} 支處置股）...')
+        for row in fetch_tse_notice_for_codes(tse_disp_codes):
+            if len(row) < 6:
+                continue
+            code = str(row[1]).strip()
+            name = str(row[2]).strip()
+            date = roc_slash_to_iso(row[5])
+            if not code or not date:
+                continue
+            reason    = str(row[4]).strip() if len(row) > 4 else ''
+            close_val = safe_float(row[6]) if len(row) > 6 else 0.0
+            tse_codes.add(code)
+            upsert_stock(conn, code, name, 'TSE')
+            conn.execute(
+                'INSERT OR REPLACE INTO notice_stocks '
+                '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
+                (code, name, 'TSE', date, reason, close_val)
+            )
+            stats['tse_notice'] += 1
+        conn.commit()
+        log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
+    else:
+        log('\n[1/6] TSE 注意股：無處置股代碼，略過')
 
     # ── Step 3：OTC 注意股 ─────────────────────
     log('\n[3/6] OTC 注意股（TPEx）...')
@@ -639,14 +663,28 @@ def update_all(verbose=True):
 
     # ── Step 5+6：全市場股價（TSE MI_INDEX + OTC bulk，每日僅 2 次 API）──
     log('\n[5/6] 全市場股價歷史（TSE + OTC 批次抓取）...')
-    tse_all, otc_all = fetch_all_prices_bulk(days=35)
+    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=35)
 
-    log(f'  寫入 TSE {len(tse_all)} 支...')
+    # 批次寫入股票名稱（供自動完成使用）
+    now_str = datetime.now().isoformat()
+    name_rows = (
+        [(code, name, 'TSE', now_str) for code, name in tse_names.items() if name] +
+        [(code, name, 'OTC', now_str) for code, name in otc_names.items() if name]
+    )
+    if name_rows:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            name_rows
+        )
+        conn.commit()
+        log(f'  寫入股票名稱：TSE {len(tse_names)} + OTC {len(otc_names)} 支')
+
+    log(f'  寫入 TSE {len(tse_all)} 支股價...')
     stats['tse_price'] = bulk_insert_prices(conn, tse_all, 'TSE')
     conn.commit()
     log(f'  → TSE 共 {stats["tse_price"]} 筆')
 
-    log(f'  寫入 OTC {len(otc_all)} 支...')
+    log(f'  寫入 OTC {len(otc_all)} 支股價...')
     stats['otc_price'] = bulk_insert_prices(conn, otc_all, 'OTC')
     conn.commit()
     log(f'\n[6/6] → OTC 共 {stats["otc_price"]} 筆')
