@@ -190,6 +190,33 @@ def safe_int(s, default=0):
 # TSE（上市）資料抓取
 # ═══════════════════════════════════════════════
 
+def fetch_tse_notice(days=30):
+    """抓取 TWSE 全市場注意股記錄（近 days 天，單次 API）
+    回傳格式：[編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
+    """
+    today = datetime.now()
+    end   = today - timedelta(days=1)
+    start = today - timedelta(days=days)
+    try:
+        r = requests.get(
+            'https://www.twse.com.tw/announcement/notice',
+            params={
+                'response':  'json',
+                'querytype': '2',
+                'startDate': start.strftime('%Y%m%d'),
+                'endDate':   end.strftime('%Y%m%d'),
+            },
+            headers=TWSE_HEADERS, timeout=20
+        )
+        r.raise_for_status()
+        d = r.json()
+        if d.get('stat') == 'OK' and d.get('data'):
+            return d['data']
+    except Exception as e:
+        print(f'  [TSE notice all] 失敗: {e}')
+    return []
+
+
 def fetch_tse_notice_for_codes(codes, days=65):
     """
     針對指定代碼逐一查詢 TWSE 注意股記錄（querytype=2 + stockNo）
@@ -541,10 +568,29 @@ def update_all(verbose=True):
     tse_codes = set()
     otc_codes = set()
 
-    # ── Step 1：TSE 注意股（先跑處置股取得代碼，再逐一查注意史）─────
-    # 注意：TWSE 沒有全市場一次查的注意股 API，需逐支股票查詢
-    # 這裡先處理處置股（step 2），取得代碼後再查
-    log('\n[1/6] TSE 注意股（先取處置股代碼，再逐一查詢）...')
+    # ── Step 1：TSE 注意股（全市場，近30日，單次 API）─────
+    log('\n[1/6] TSE 注意股（TWSE，全市場近30日）...')
+    for row in fetch_tse_notice(days=30):
+        # row: [編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
+        if len(row) < 6:
+            continue
+        code = str(row[1]).strip()
+        name = str(row[2]).strip()
+        date = roc_slash_to_iso(row[5])
+        if not code or not date:
+            continue
+        reason    = str(row[4]).strip() if len(row) > 4 else ''
+        close_val = safe_float(row[6]) if len(row) > 6 else 0.0
+        tse_codes.add(code)
+        upsert_stock(conn, code, name, 'TSE')
+        conn.execute(
+            'INSERT OR REPLACE INTO notice_stocks '
+            '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
+            (code, name, 'TSE', date, reason, close_val)
+        )
+        stats['tse_notice'] += 1
+    conn.commit()
+    log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
 
     # ── Step 2：TSE 處置股 ─────────────────────
     log('\n[2/6] TSE 處置股（TWSE）...')
@@ -580,33 +626,6 @@ def update_all(verbose=True):
         stats['tse_disposal'] += 1
     conn.commit()
     log(f'  → {stats["tse_disposal"]} 筆，{len(tse_disp_codes)} 支股票')
-
-    # ── Step 1 續：TSE 注意股（逐支處置股代碼查詢歷史）─────
-    # 回傳格式：[序號, 代碼, 名稱, 累計次數, 原因, 日期"115.05.28", 收盤, PE]
-    if tse_disp_codes:
-        log(f'\n[1/6] TSE 注意股（逐一查詢 {len(tse_disp_codes)} 支處置股）...')
-        for row in fetch_tse_notice_for_codes(tse_disp_codes):
-            if len(row) < 6:
-                continue
-            code = str(row[1]).strip()
-            name = str(row[2]).strip()
-            date = roc_slash_to_iso(row[5])
-            if not code or not date:
-                continue
-            reason    = str(row[4]).strip() if len(row) > 4 else ''
-            close_val = safe_float(row[6]) if len(row) > 6 else 0.0
-            tse_codes.add(code)
-            upsert_stock(conn, code, name, 'TSE')
-            conn.execute(
-                'INSERT OR REPLACE INTO notice_stocks '
-                '(code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)',
-                (code, name, 'TSE', date, reason, close_val)
-            )
-            stats['tse_notice'] += 1
-        conn.commit()
-        log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
-    else:
-        log('\n[1/6] TSE 注意股：無處置股代碼，略過')
 
     # ── Step 3：OTC 注意股 ─────────────────────
     log('\n[3/6] OTC 注意股（TPEx）...')
