@@ -859,6 +859,48 @@ if __name__ == '__main__':
         print(f'  全市場 TSE {tse_total} + OTC {otc_total} = {tse_total+otc_total} 支')
         print(f'  全市場總筆數：{total_rows:,}')
         print(f'  預估完整寫入時間：{est_write:.0f} 秒（{est_write/60:.1f} 分鐘）')
+    elif '--step2' in args:
+        init_db()
+        conn = get_db()
+        now_str = datetime.now().isoformat()
+        print('[Step 2] TSE 處置股...')
+        conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
+        conn.commit()
+        tse_d_stocks, tse_d_rows = [], []
+        for row in fetch_tse_disposal():
+            if len(row) < 4:
+                continue
+            code = str(row[2]).strip()
+            name = str(row[3]).strip()
+            if not code:
+                continue
+            announce = roc_slash_to_iso(row[1]) if len(row) > 1 else ''
+            period   = str(row[6]) if len(row) > 6 else ''
+            sd = ed = ''
+            if '～' in period or '~' in period:
+                parts = period.replace('~', '～').split('～')
+                sd = roc_slash_to_iso(parts[0])
+                ed = roc_slash_to_iso(parts[1]) if len(parts) > 1 else ''
+            tse_d_stocks.append((code, name, 'TSE', now_str))
+            tse_d_rows.append((code, name, 'TSE', announce, sd, ed,
+                               str(row[5]) if len(row) > 5 else '',
+                               str(row[7]) if len(row) > 7 else '',
+                               str(row[8]) if len(row) > 8 else ''))
+        if tse_d_stocks:
+            conn.executemany(
+                'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+                tse_d_stocks
+            )
+        if tse_d_rows:
+            conn.executemany(
+                'INSERT OR REPLACE INTO disposition_stocks '
+                '(code,name,market,announce_date,start_date,end_date,reason,measure,content) '
+                'VALUES (?,?,?,?,?,?,?,?,?)',
+                tse_d_rows
+            )
+        conn.commit()
+        conn.close()
+        print(f'  → {len(tse_d_rows)} 筆，{len(tse_d_stocks)} 支股票')
     elif '--test-price' in args:
         # 快速測試：插入一筆假股價，驗證 executemany 是否正常
         init_db()
