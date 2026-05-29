@@ -604,6 +604,7 @@ def update_all(verbose=True):
     log(f'  → {stats["tse_notice"]} 筆，{len(tse_codes)} 支股票')
 
     # ── Step 2：TSE 處置股 ─────────────────────
+    time.sleep(2)   # 避免連續打 TWSE 被 rate limit
     log('\n[2/6] TSE 處置股（TWSE）...')
     conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
     conn.commit()
