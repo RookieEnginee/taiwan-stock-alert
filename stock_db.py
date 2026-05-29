@@ -33,8 +33,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ── 設定 ─────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stock_data.db')
 
-# 保留天數（30 日曆天 ≈ 20 個交易日）
-KEEP_DAYS = 30
+# 保留天數（90 日曆天 ≈ 60 個交易日，供 60日均量計算使用）
+KEEP_DAYS = 90
 
 TWSE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -468,7 +468,7 @@ def fetch_tse_daily_all(iso_date):
         return {}
 
 
-def fetch_all_prices_bulk(days=35):
+def fetch_all_prices_bulk(days=90):
     """
     批次抓取全市場（TSE + OTC）近 days 個日曆天的股價
     每個交易日只需 2 次 API（TSE MI_INDEX + OTC mainboard）
@@ -751,7 +751,7 @@ def update_all(verbose=True):
 
     # ── Step 5+6：全市場股價（TSE MI_INDEX + OTC bulk，每日僅 2 次 API）──
     log('\n[5/6] 全市場股價歷史（TSE + OTC 批次抓取）...')
-    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=35)
+    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=90)
 
     # 批次寫入股票名稱（供自動完成使用）
     now_str = datetime.now().isoformat()
@@ -1002,7 +1002,7 @@ if __name__ == '__main__':
         today = datetime.now().date()
         tse_all, tse_names = {}, {}
         t_days = 0
-        for offset in range(35):
+        for offset in range(90):
             target = today - timedelta(days=offset)
             if target.weekday() >= 5:
                 continue
@@ -1106,7 +1106,7 @@ if __name__ == '__main__':
         today = datetime.now().date()
         otc_all, otc_names = {}, {}
         t_days = 0
-        for offset in range(35):
+        for offset in range(90):
             target = today - timedelta(days=offset)
             if target.weekday() >= 5:
                 continue
