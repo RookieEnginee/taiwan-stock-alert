@@ -1655,7 +1655,7 @@ async function getDbPrices(code, market) {
       const chgVal = item.change || 0;
       return {
         date:   d,
-        vol:    item.volume || 0,
+        vol:    (item.volume || 0) * 1000,  // DB 存張，前端統一用股（/1000 顯示）
         val:    0,
         open:   item.open  || 0,
         high:   item.high  || 0,
