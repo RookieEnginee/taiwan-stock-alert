@@ -517,21 +517,40 @@
 // ═══════════════════════════════════════════════
 // Autocomplete
 // ═══════════════════════════════════════════════
-let stockList  = null;   // [{code, name, market}]
-let acActive   = -1;     // keyboard-highlighted index
-let acTimer    = null;
-let acBlurTimer= null;
-let currentMarket = 'TSE';   // 'TSE' or 'OTC'
-let otcListPromise = null;   // Promise for OTC background load (so it can be awaited)
+let stockList      = null;   // [{code, name, market}]
+let acActive       = -1;
+let acTimer        = null;
+let acBlurTimer    = null;
+let currentMarket  = 'TSE';
+let otcListPromise = null;
+let _acLoadPromise = null;   // 唯一的載入 Promise，防止競爭條件
 
 async function acLoadList() {
-  if (stockList !== null) return;
-  stockList = [];  // 標記「載入中」，避免重複呼叫
+  if (stockList && stockList.length > 0) return;  // 已載入
+  if (_acLoadPromise) return _acLoadPromise;       // 載入中，等同一個 Promise
+  _acLoadPromise = _doAcLoad();
+  return _acLoadPromise;
+}
+
+async function _doAcLoad() {
+  stockList = [];  // 標記「載入中」
   const dd = document.getElementById('acDropdown');
   dd.innerHTML = '<div class="ac-loading">載入股票清單中…</div>';
   dd.classList.add('open');
 
   const tseFetch = (async () => {
+    // ① 優先從 DB 取（Render 部署時 TWSE 可能封鎖海外 IP）
+    if (!IS_FILE) {
+      try {
+        const r = await fetch('/db/stocklist?market=TSE', { cache: 'force-cache' });
+        if (r.ok) {
+          const d = await r.json();
+          if (Array.isArray(d) && d.length > 0)
+            return d.map(s => ({ code: s.code, name: s.name || s.code, market: 'TSE' }));
+        }
+      } catch(_) {}
+    }
+    // ② fallback：直接呼叫 TWSE
     try {
       const url = IS_FILE
         ? 'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&selectType=ALL'
@@ -1788,11 +1807,11 @@ async function doSearch() {
       return;
     }
   } else {
-    // ── 純數字代碼：若清單尚未載入則等完再偵測市場 ──
-    if (stockList === null) {
+    // ── 純數字代碼：等清單完全載入後再偵測市場 ──
+    if (!stockList || stockList.length === 0) {
       $id('loadingDiv').classList.remove('hidden');
       set('loadingMsg', '載入上市／上櫃股票清單中…');
-      await acLoadList();
+      await acLoadList();   // 使用同一個 Promise，不會重複呼叫
       $id('loadingDiv').classList.add('hidden');
     }
     if (stockList && stockList.length > 0) {
@@ -1816,7 +1835,14 @@ async function doSearch() {
       try {
         await doSearchTSE(code);
       } catch (tseErr) {
-        if (tseErr.message.includes('查無')) {
+        // 查無此股 或 TWSE 被海外 IP 封鎖 → 嘗試 OTC
+        const shouldTryOTC =
+          tseErr.message.includes('查無') ||
+          tseErr.message.includes('JSON') ||
+          tseErr.message.includes('封鎖') ||
+          tseErr.message.includes('HTTP 502') ||
+          tseErr.message.includes('HTTP 504');
+        if (shouldTryOTC) {
           currentMarket = 'OTC';
           await doSearchOTC(code);
         } else {

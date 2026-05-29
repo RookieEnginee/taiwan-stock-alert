@@ -375,6 +375,52 @@ def get_stock_db():
     return open_db(STOCK_DB_PATH)
 
 
+@app.route('/db/stocklist')
+def db_stocklist():
+    """從 stock_data.db 取得股票清單（供自動完成，取代 TWSE/TPEx 直連）"""
+    market = request.args.get('market', '').upper()
+    conn = get_stock_db()
+    if not conn:
+        return jsonify([])
+    try:
+        # 從 stocks 表取有名稱的股票
+        if market:
+            named = conn.execute(
+                'SELECT code, name, market FROM stocks WHERE market=? ORDER BY code',
+                (market,)
+            ).fetchall()
+        else:
+            named = conn.execute(
+                'SELECT code, name, market FROM stocks ORDER BY code'
+            ).fetchall()
+        named_set = {(r['code'], r['market']) for r in named}
+
+        # 從 daily_price 補上沒有名稱的（近 7 天有資料的）
+        if market:
+            priced = conn.execute(
+                '''SELECT DISTINCT code, market FROM daily_price
+                   WHERE market=? AND date >= date('now','-7 days') ORDER BY code''',
+                (market,)
+            ).fetchall()
+        else:
+            priced = conn.execute(
+                '''SELECT DISTINCT code, market FROM daily_price
+                   WHERE date >= date('now','-7 days') ORDER BY code'''
+            ).fetchall()
+
+        out = [{'code': r['code'], 'name': r['name'], 'market': r['market']}
+               for r in named]
+        for r in priced:
+            if (r['code'], r['market']) not in named_set:
+                out.append({'code': r['code'], 'name': '', 'market': r['market']})
+
+        resp = jsonify(out)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
 @app.route('/db/status')
 def db_status():
     """回傳 stock_data.db 最後更新狀態"""
