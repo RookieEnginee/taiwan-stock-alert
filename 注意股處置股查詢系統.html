@@ -1406,7 +1406,8 @@ function renderRoutes(m) {
       .map(d => `${d.getMonth()+1}/${d.getDate()}`).join('、');
   }
 
-  function renderRoute(id, current, total, need, unit, dateStr) {
+  // isConsecutive=true → 路線①②（連續天數）；false → 路線③④（滾動次數）
+  function renderRoute(id, current, total, need, unit, dateStr, isConsecutive = false) {
     const pct = clamp(current / total * 100, 0, 100);
     const fillEl = $id(id + 'fill');
     fillEl.style.width = pct + '%';
@@ -1415,9 +1416,10 @@ function renderRoutes(m) {
     const exchName = currentMarket === 'OTC' ? 'TPEx' : 'TWSE';
     if (need === 0) {
       set(id + 'val', `⚠️ ${current}/${total} — 已達門檻！`);
-      set(id + 'det',
-        `依 ${exchName} 公告已連續 ${current} 日：${dateStr}\n` +
-        `次日（明日）起執行處置措施`);
+      const detLine = isConsecutive
+        ? `依 ${exchName} 公告已連續 ${current} 日：${dateStr}`
+        : `依 ${exchName} 公告近期已達 ${current} 次（${dateStr}）`;
+      set(id + 'det', `${detLine}\n次日（明日）起執行處置措施`);
     } else if (need === 1 && current > 0) {
       set(id + 'val', `${current} / ${total} ${unit}`);
       set(id + 'det',
@@ -1446,11 +1448,11 @@ function renderRoutes(m) {
     renderBroken('r2', 5);
   } else {
     const consecStr = fmtNoticeDates(m.liveConsecutive);
-    renderRoute('r1', m.liveConsecutive, 3, m.r1need, '天', consecStr);
-    renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr);
+    renderRoute('r1', m.liveConsecutive, 3, m.r1need, '天', consecStr, true);
+    renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr, true);
   }
-  renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10));
-  renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6)));
+  renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10),              false);
+  renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6)), false);
 }
 
 function renderChart(data) {
