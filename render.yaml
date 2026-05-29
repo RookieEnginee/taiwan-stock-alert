@@ -3,7 +3,7 @@ services:
     name: taiwan-stock-alert
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --workers 2 --timeout 30
     plan: free
     envVars:
       - key: PYTHON_VERSION
