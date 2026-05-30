@@ -1103,8 +1103,9 @@ function analyse(code, dailyData, noticeRows, disposalList) {
 
   // ── Disposal status（需先算，才能決定 cnt10/cnt30 的計算方式）──
   const todayMs = today.getTime();
-  let activeDisposal = null;
-  let disposalStart  = null;
+  let activeDisposal   = null;  // 處置中
+  let upcomingDisposal = null;  // 已公告、尚未開始
+  let disposalStart    = null;
   const myEntries = disposalList.filter(r => r[2] === code);
   for (const row of myEntries) {
     const range = row[6] || '';
@@ -1116,6 +1117,9 @@ function analyse(code, dailyData, noticeRows, disposalList) {
       activeDisposal = row;
       disposalStart  = s;
       break;
+    } else if (s.getTime() > todayMs) {
+      // 已公告但還沒開始（例如週五公告、週一才生效）
+      upcomingDisposal = row;
     }
   }
 
@@ -1200,7 +1204,7 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     noticeDates, noticeDatesForRoutes, cnt10, cnt30,
     consecutive, liveConsecutive, streakIsLive,
     noticeRows,
-    activeDisposal, disposalStart,
+    activeDisposal, upcomingDisposal, disposalStart,
     r1need, r2need, r3need, r4need, minNeed
   };
 }
@@ -1263,6 +1267,11 @@ function renderUI(code, stockName, m) {
     badgeMain.className = 'badge badge-disposal';
     badgeMain.textContent = '🚨 處置股';
     badgeDisp.classList.add('hidden');
+  } else if (m.upcomingDisposal) {
+    badgeMain.className = 'badge badge-disposal';
+    const uRange = (m.upcomingDisposal[6] || '').split('～');
+    badgeMain.textContent = `⏳ 即將處置（${uRange[0] || ''}起）`;
+    badgeDisp.classList.add('hidden');
   } else if (m.minNeed <= 1) {
     badgeMain.className = 'badge badge-notice';
     badgeMain.textContent = '⚠️ 高風險 — 接近處置';
@@ -1315,6 +1324,11 @@ function renderUI(code, stockName, m) {
     set('cdText', '處置中');
     setStyle('cdText', 'color', 'var(--red)');
     set('cdSub', '見下方處置詳細資訊');
+  } else if (m.upcomingDisposal) {
+    const uRange = (m.upcomingDisposal[6] || '').split('～');
+    set('cdText', '⏳ 即將處置');
+    setStyle('cdText', 'color', 'var(--orange)');
+    set('cdSub', `已公告，${uRange[0] || ''}起正式執行處置措施`);
   } else if (m.minNeed === 0) {
     set('cdText', '即將處置！');
     setStyle('cdText', 'color', 'var(--red)');
@@ -1375,24 +1389,31 @@ function renderUI(code, stockName, m) {
   // ── Routes card ──
   renderRoutes(m);
 
-  // ── Active disposal info ──
+  // ── Active / Upcoming disposal info ──
   const adCard = $id('activeDisposalCard');
-  if (m.activeDisposal) {
+  const dispRow = m.activeDisposal || m.upcomingDisposal;
+  if (dispRow) {
     adCard.classList.remove('hidden');
-    const row = m.activeDisposal;
-    set('dAnnDate', row[1]);
-    set('dReason',  row[5]);
-    set('dPeriod',  row[6]);
-    set('dMeasure', row[7]);
-    // Remaining days
-    const range = row[6].split('～');
+    adCard.querySelector('.disposal-active-title').textContent =
+      m.activeDisposal ? '🚨 目前處置中 — 詳細資訊' : '⏳ 即將處置 — 詳細資訊';
+    set('dAnnDate', dispRow[1]);
+    set('dReason',  dispRow[5]);
+    set('dPeriod',  dispRow[6]);
+    set('dMeasure', dispRow[7]);
+    // Days until end (or until start for upcoming)
+    const range = dispRow[6].split('～');
     if (range.length === 2) {
-      const endD = parseDateSlash(range[1].trim());
-      const dayLeft = Math.round((endD - new Date()) / 86400000);
-      set('dRemain', dayLeft > 0 ? `${dayLeft} 日` : '即將結束');
+      if (m.upcomingDisposal && !m.activeDisposal) {
+        const startD = parseDateSlash(range[0].trim());
+        const daysToStart = Math.round((startD - new Date()) / 86400000);
+        set('dRemain', `${daysToStart} 日後開始`);
+      } else {
+        const endD = parseDateSlash(range[1].trim());
+        const dayLeft = Math.round((endD - new Date()) / 86400000);
+        set('dRemain', dayLeft > 0 ? `${dayLeft} 日` : '即將結束');
+      }
     }
-    // Content (strip HTML, first ~800 chars)
-    const content = stripHtml(row[8] || '').replace(/\n+/g,'\n').trim().substring(0, 800);
+    const content = stripHtml(dispRow[8] || '').replace(/\n+/g,'\n').trim().substring(0, 800);
     set('dContent', content);
   } else {
     adCard.classList.add('hidden');
