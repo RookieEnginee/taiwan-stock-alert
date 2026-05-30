@@ -1154,7 +1154,7 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     return true;
   }
 
-  // 連續注意股天數（以真實交易日曆判斷）
+  // 連續注意股天數（以真實交易日曆判斷）—— 路線②：任何款皆可
   // 處置中時用 noticeDatesForRoutes（只含處置期間內的注意日期），
   // 避免處置前的連續天數被帶入再次處置的計算
   let consecutive = 0;
@@ -1167,7 +1167,7 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     }
   }
 
-  // ── 確認連續streak是否「仍在作用中」──
+  // ── 確認路線②連續streak是否「仍在作用中」──
   let streakIsLive = false;
   if (consecutive > 0 && noticeDatesForRoutes.length > 0) {
     const lastNotice   = noticeDatesForRoutes[0];
@@ -1184,13 +1184,43 @@ function analyse(code, dailyData, noticeRows, disposalList) {
       cur.setDate(cur.getDate() + 1);
     }
   }
-  // r1/r2 使用「作用中的連續天數」（中斷則視為 0）
   const liveConsecutive = streakIsLive ? consecutive : 0;
 
+  // ── 路線①：只計「因第一款」被列注意股的連續天數 ──
+  const noticeReasonMap = new Map(
+    noticeRows.map(r => [parseDateDot(r[5]).toDateString(), r[4] || ''])
+  );
+  const noticeDatesRoute1 = noticeDatesForRoutes.filter(d =>
+    (noticeReasonMap.get(d.toDateString()) || '').includes('第一款')
+  );
+  let consecutiveRoute1 = 0;
+  for (let i = 0; i < noticeDatesRoute1.length; i++) {
+    if (i === 0) { consecutiveRoute1 = 1; continue; }
+    if (areTradingConsecutive(noticeDatesRoute1[i-1], noticeDatesRoute1[i])) {
+      consecutiveRoute1++;
+    } else {
+      break;
+    }
+  }
+  let streakRoute1IsLive = false;
+  if (consecutiveRoute1 > 0 && noticeDatesRoute1.length > 0) {
+    const lastNotice1  = noticeDatesRoute1[0];
+    const route1DaySet = new Set(noticeDatesRoute1.map(d => d.toDateString()));
+    const cur = new Date(lastNotice1);
+    cur.setDate(cur.getDate() + 1);
+    streakRoute1IsLive = true;
+    while (cur <= last.date) {
+      if (tradingDaySet.has(cur.toDateString()) && !route1DaySet.has(cur.toDateString())) {
+        streakRoute1IsLive = false;
+        break;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  const liveConsecutiveRoute1 = streakRoute1IsLive ? consecutiveRoute1 : 0;
+
   // ── Route needs ──
-  // 路線①②用 liveConsecutive（中斷則歸零）
-  // 路線③④用滾動窗口計次（不管連續與否）
-  const r1need = Math.max(0, 3 - liveConsecutive);
+  const r1need = Math.max(0, 3 - liveConsecutiveRoute1);
   const r2need = Math.max(0, 5 - liveConsecutive);
   const r3need = Math.max(0, 6 - cnt10);
   const r4need = Math.max(0, 12 - cnt30);
@@ -1203,6 +1233,7 @@ function analyse(code, dailyData, noticeRows, disposalList) {
     thr25, thr32, thrSafe, thrVol,
     noticeDates, noticeDatesForRoutes, cnt10, cnt30,
     consecutive, liveConsecutive, streakIsLive,
+    noticeDatesRoute1, consecutiveRoute1, liveConsecutiveRoute1, streakRoute1IsLive,
     noticeRows,
     activeDisposal, upcomingDisposal, disposalStart,
     r1need, r2need, r3need, r4need, minNeed
@@ -1491,23 +1522,32 @@ function renderRoutes(m) {
     }
   }
 
-  // 路線①②：中斷時顯示 0/3，並標示上次連續何時中斷
-  if (!m.streakIsLive && m.consecutive > 0) {
-    const lastStr = `${m.noticeDates[0].getMonth()+1}/${m.noticeDates[0].getDate()}`;
-    function renderBroken(id, total) {
-      const fillEl = $id(id + 'fill');
-      fillEl.style.width = '0%';
-      fillEl.className = 'route-fill rf-green';
-      setStyle(id + 'val', 'color', 'var(--green)');
-      set(id + 'val', `0 / ${total} 天`);
-      set(id + 'det', `連續已中斷（上次注意：${lastStr}）\n下次被列入注意股時從第 1 天重新累計`);
-    }
-    renderBroken('r1', 3);
-    renderBroken('r2', 5);
+  // 路線①：只計因第一款的連續日，與路線②（任何款）分開處理
+  if (!m.streakRoute1IsLive && m.consecutiveRoute1 > 0) {
+    const lastStr1 = `${m.noticeDatesRoute1[0].getMonth()+1}/${m.noticeDatesRoute1[0].getDate()}`;
+    const fillEl1 = $id('r1fill');
+    fillEl1.style.width = '0%';
+    fillEl1.className = 'route-fill rf-green';
+    setStyle('r1val', 'color', 'var(--green)');
+    set('r1val', `0 / 3 天`);
+    set('r1det', `第一款連續已中斷（上次第一款：${lastStr1}）\n下次因第一款被列入時從第 1 天重新累計`);
   } else {
-    const consecStr = fmtNoticeDates(m.liveConsecutive);
-    renderRoute('r1', m.liveConsecutive, 3, m.r1need, '天', consecStr, true);
-    renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr, true);
+    const consecStr1 = fmtNoticeDates(m.liveConsecutiveRoute1, m.noticeDatesRoute1);
+    renderRoute('r1', m.liveConsecutiveRoute1, 3, m.r1need, '天', consecStr1, true);
+  }
+
+  // 路線②：任何款皆可的連續日
+  if (!m.streakIsLive && m.consecutive > 0) {
+    const lastStr2 = `${m.noticeDates[0].getMonth()+1}/${m.noticeDates[0].getDate()}`;
+    const fillEl2 = $id('r2fill');
+    fillEl2.style.width = '0%';
+    fillEl2.className = 'route-fill rf-green';
+    setStyle('r2val', 'color', 'var(--green)');
+    set('r2val', `0 / 5 天`);
+    set('r2det', `連續已中斷（上次注意：${lastStr2}）\n下次被列入注意股時從第 1 天重新累計`);
+  } else {
+    const consecStr2 = fmtNoticeDates(m.liveConsecutive);
+    renderRoute('r2', m.liveConsecutive, 5, m.r2need, '天', consecStr2, true);
   }
   renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10,              m.noticeDatesForRoutes), false);
   renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6), m.noticeDatesForRoutes), false);
