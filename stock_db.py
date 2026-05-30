@@ -730,9 +730,9 @@ def update_all(verbose=True):
         otc_codes.add(code)
         otc_d_stocks.append((code, name, 'OTC', now_str))
         otc_d_rows.append((code, name, 'OTC', announce, sd, ed,
-                           str(item.get('Reason', '')),
+                           str(item.get('DispositionReasons', '')),
                            str(item.get('DispositionMeasure', '')),
-                           str(item.get('Content', ''))))
+                           str(item.get('DisposalCondition', ''))))
     if otc_d_stocks:
         conn.executemany(
             'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
@@ -1098,9 +1098,9 @@ if __name__ == '__main__':
             otc_codes.add(code)
             otc_d_stocks.append((code, name, 'OTC', now_str))
             otc_d_rows.append((code, name, 'OTC', announce, sd, ed,
-                               str(item.get('Reason', '')),
+                               str(item.get('DispositionReasons', '')),
                                str(item.get('DispositionMeasure', '')),
-                               str(item.get('Content', ''))))
+                               str(item.get('DisposalCondition', ''))))
         if otc_d_stocks:
             conn.executemany('INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)', otc_d_stocks)
         if otc_d_rows:
