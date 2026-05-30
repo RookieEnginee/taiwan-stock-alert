@@ -1788,17 +1788,19 @@ async function getDbDisposalRows(code, market) {
 
 // ── 上市（TSE）查詢 ──────────────────────────────
 async function doSearchTSE(code) {
+  const entry = (stockList || []).find(s => s.code === code && s.market === 'TSE');
+  let stockName = entry ? entry.name : '';
+
   // ① 股價：優先 DB，fallback TWSE
   set('loadingMsg', '① 載入股價歷史資料…');
   let dailyData = await getDbPrices(code, 'TSE');
-  let stockName = '';
   const fromDb = !!dailyData;
 
   if (!dailyData) {
     set('loadingMsg', '① 從 TWSE 載入上市股價歷史…');
     const result = await getDailyData(code);
     dailyData  = result.data;
-    stockName  = result.name;
+    if (result.name && !stockName) stockName = result.name;
   } else {
     set('loadingMsg', '① 股價已從資料庫載入 ✓');
   }
