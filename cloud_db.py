@@ -10,7 +10,6 @@ cloud_db.py — Turso HTTP API / SQLite 共用資料庫適配器
 未設定時自動使用本機 SQLite。
 """
 import os
-import sqlite3
 import requests as _req
 
 TURSO_URL   = os.environ.get('TURSO_DATABASE_URL', '').strip()
@@ -200,22 +199,14 @@ class _TursoConn:
 
 # ── 公開介面 ──────────────────────────────────────
 
-def open_db(local_path: str, *, pragma_wal: bool = False):
-    """
-    回傳資料庫連線：
-    - 環境變數有設定 → Turso cloud（HTTP API，只需 requests）
-    - 否則 → 本機 SQLite
-    """
-    if TURSO_URL and TURSO_TOKEN:
-        return _TursoConn(TURSO_URL, TURSO_TOKEN)
-
-    conn = sqlite3.connect(local_path)
-    conn.row_factory = sqlite3.Row
-    if pragma_wal:
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA foreign_keys=ON')
-    return conn
+def open_db(local_path: str = None, *, pragma_wal: bool = False):
+    """回傳 Turso 雲端資料庫連線（需設定 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN）"""
+    if not TURSO_URL or not TURSO_TOKEN:
+        raise RuntimeError(
+            '請在 .env 設定 TURSO_DATABASE_URL 與 TURSO_AUTH_TOKEN'
+        )
+    return _TursoConn(TURSO_URL, TURSO_TOKEN)
 
 
 def using_turso() -> bool:
-    return bool(TURSO_URL and TURSO_TOKEN)
+    return True

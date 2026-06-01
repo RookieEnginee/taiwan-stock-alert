@@ -7,6 +7,8 @@
 
 import os
 import hashlib
+from dotenv import load_dotenv
+load_dotenv()
 import sqlite3
 import requests
 from collections import defaultdict
