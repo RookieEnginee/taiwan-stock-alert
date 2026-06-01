@@ -112,6 +112,11 @@ def index():
     return resp
 
 
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+
 # ── TWSE 代理 ─────────────────────────────────────────
 @app.route('/proxy/<name>')
 def twse_proxy(name):
