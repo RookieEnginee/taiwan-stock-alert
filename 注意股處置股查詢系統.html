@@ -15,7 +15,7 @@
   <!-- Google AdSense -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9501565499768681"
        crossorigin="anonymous"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root {
       --bg: #0d1117;
@@ -389,6 +389,7 @@
       .stock-header { flex-direction:column; }
       .stkh-right { text-align:left; }
     }
+    .tv-lightweight-charts a { display:none !important; }
   </style>
 </head>
 <body>
@@ -590,8 +591,8 @@
 
     <!-- Price Chart -->
     <div class="chart-card">
-      <div class="card-title">📈 近30日收盤價走勢 &amp; 成交量</div>
-      <canvas id="priceChart" height="90"></canvas>
+      <div class="card-title">📈 近30日K線走勢 &amp; 成交量</div>
+      <div id="priceChart" style="height:320px;border-radius:6px;overflow:hidden;position:relative;"></div>
     </div>
 
     <!-- Tomorrow's Trigger Calculator -->
@@ -1674,74 +1675,122 @@ function renderRoutes(m) {
 }
 
 function renderChart(data) {
-  const labels = data.map(d => `${d.date.getMonth()+1}/${d.date.getDate()}`);
-  const closes = data.map(d => d.close);
-  const vols   = data.map(d => Math.round(d.vol / 1000));
+  const container = $id('priceChart');
+  if (chart) { chart.remove(); chart = null; }
 
-  const lineColor = closes[closes.length-1] >= closes[0] ? '#f85149' : '#3fb950';
+  // 移除舊 tooltip
+  const oldTip = container.querySelector('.chart-tip');
+  if (oldTip) oldTip.remove();
 
-  if (chart) { chart.destroy(); chart = null; }
-
-  const ctx = $id('priceChart').getContext('2d');
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: '收盤價',
-          data: closes,
-          borderColor: lineColor,
-          backgroundColor: lineColor + '18',
-          borderWidth: 2.5,
-          fill: true,
-          tension: 0.3,
-          pointRadius: 3,
-          pointHoverRadius: 6,
-          yAxisID: 'y'
-        },
-        {
-          label: '成交量(張)',
-          data: vols,
-          type: 'bar',
-          backgroundColor: '#388bfd28',
-          borderColor: '#388bfd',
-          borderWidth: 0,
-          yAxisID: 'y1'
-        }
-      ]
+  chart = LightweightCharts.createChart(container, {
+    autoSize: true,
+    height:   320,
+    layout: {
+      background: { color: '#161b22' },
+      textColor: '#7d8590',
     },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { labels: { color: '#7d8590', usePointStyle: true, boxWidth: 10 } },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              if (ctx.datasetIndex === 0) return ` 收盤：NT$${nf(ctx.raw)}`;
-              return ` 成交量：${ctx.raw.toLocaleString()} 張`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          ticks: { color: '#7d8590', maxTicksLimit: 15 },
-          grid:  { color: '#21262d' }
-        },
-        y: {
-          position: 'left',
-          ticks: { color: '#7d8590', callback: v => `$${nf(v, 0)}` },
-          grid:  { color: '#21262d' }
-        },
-        y1: {
-          position: 'right',
-          ticks: { color: '#388bfd', callback: v => `${v.toLocaleString()}張` },
-          grid:  { drawOnChartArea: false }
-        }
-      }
+    grid: {
+      vertLines: { color: '#21262d' },
+      horzLines: { color: '#21262d' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    leftPriceScale:  { visible: false },
+    timeScale: {
+      borderColor:   '#30363d',
+      timeVisible:   false,
+      fixLeftEdge:   true,
+      fixRightEdge:  true,
+    },
+    handleScroll: {
+      mouseWheel:       false,
+      pressedMouseMove: false,
+      horzTouchDrag:    false,
+    },
+    handleScale: false,
+    watermark:   { visible: false },
+  });
+
+  // 蠟燭圖：台股漲紅跌綠
+  const candleSeries = chart.addCandlestickSeries({
+    upColor:        '#f85149',
+    downColor:      '#3fb950',
+    borderUpColor:  '#f85149',
+    borderDownColor:'#3fb950',
+    wickUpColor:    '#f85149',
+    wickDownColor:  '#3fb950',
+  });
+
+  // 建立 date → 漲跌資訊 對照表
+  const fmtTime = d => `${d.date.getFullYear()}-${pad(d.date.getMonth()+1)}-${pad(d.date.getDate())}`;
+  const extraMap = {};
+  data.forEach((d, i) => {
+    const prevClose = i > 0 ? data[i-1].close : (d.open || d.close);
+    const chg    = d.chg !== undefined ? d.chg : (d.close - prevClose);
+    const chgPct = prevClose > 0 ? (chg / prevClose * 100) : 0;
+    extraMap[fmtTime(d)] = { chg, chgPct, vol: Math.round(d.vol / 1000) };
+  });
+
+  candleSeries.setData(data.map(d => ({
+    time:  fmtTime(d),
+    open:  d.open  || d.close,
+    high:  d.high  || d.close,
+    low:   d.low   || d.close,
+    close: d.close,
+  })));
+
+  // 成交量長條（疊在下方 20% 空間）
+  const volSeries = chart.addHistogramSeries({
+    priceFormat:  { type: 'volume' },
+    priceScaleId: 'vol',
+  });
+  chart.priceScale('vol').applyOptions({
+    scaleMargins: { top: 0.82, bottom: 0 },
+  });
+
+  volSeries.setData(data.map(d => ({
+    time:  fmtTime(d),
+    value: Math.round(d.vol / 1000),
+    color: d.close >= d.open ? '#f8514944' : '#3fb95044',
+  })));
+
+  chart.timeScale().fitContent();
+
+  // ── Tooltip ──────────────────────────────────
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip';
+  tip.style.cssText = [
+    'position:absolute', 'top:8px', 'left:8px',
+    'display:none', 'z-index:10',
+    'background:rgba(22,27,34,0.93)',
+    'border:1px solid #30363d',
+    'border-radius:6px', 'padding:7px 12px',
+    'font-size:12px', 'color:#e6edf3',
+    'pointer-events:none', 'line-height:1.9',
+    'white-space:nowrap',
+  ].join(';');
+  container.appendChild(tip);
+
+  chart.subscribeCrosshairMove(param => {
+    if (!param.time || !param.seriesData || !param.seriesData.has(candleSeries)) {
+      tip.style.display = 'none';
+      return;
     }
+    const c   = param.seriesData.get(candleSeries);
+    const ex  = extraMap[param.time] || {};
+    const chg = ex.chg || 0;
+    const pct = ex.chgPct || 0;
+    const col = chg >= 0 ? '#f85149' : '#3fb950';
+    const sgn = chg >= 0 ? '+' : '';
+    tip.innerHTML =
+      `<span style="color:var(--muted)">開</span> <b>${nf(c.open)}</b>　` +
+      `<span style="color:var(--muted)">高</span> <b style="color:#f85149">${nf(c.high)}</b>　` +
+      `<span style="color:var(--muted)">低</span> <b style="color:#3fb950">${nf(c.low)}</b>　` +
+      `<span style="color:var(--muted)">收</span> <b>${nf(c.close)}</b><br>` +
+      `<span style="color:var(--muted)">漲跌</span> ` +
+      `<b style="color:${col}">${sgn}${nf(chg)} (${sgn}${nf(pct)}%)</b>　` +
+      `<span style="color:var(--muted)">量</span> <b>${(ex.vol||0).toLocaleString()} 張</b>`;
+    tip.style.display = 'block';
   });
 }
 
