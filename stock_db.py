@@ -120,6 +120,14 @@ def init_db():
             status     TEXT,
             message    TEXT
         );
+
+        -- 留言版
+        CREATE TABLE IF NOT EXISTS comments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nickname   TEXT    DEFAULT '匿名',
+            content    TEXT    NOT NULL,
+            created_at TEXT    NOT NULL
+        );
     ''')
     conn.commit()
     conn.close()

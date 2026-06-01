@@ -632,6 +632,56 @@ def db_approaching_disposal():
         conn.close()
 
 
+@app.route('/api/comments', methods=['GET'])
+def get_comments():
+    conn = get_stock_db()
+    if not conn:
+        return jsonify([]), 200
+    try:
+        rows = conn.execute(
+            'SELECT id, nickname, content, created_at FROM comments '
+            'ORDER BY id DESC LIMIT 100'
+        ).fetchall()
+        resp = jsonify([dict(r) for r in rows])
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
+@app.route('/api/comments', methods=['POST'])
+def post_comment():
+    data     = request.get_json(silent=True) or {}
+    content  = (data.get('content') or '').strip()
+    nickname = (data.get('nickname') or '匿名').strip()[:20]
+    if not content:
+        return jsonify({'error': '留言內容不能為空'}), 400
+    if len(content) > 100:
+        return jsonify({'error': '留言最多 100 字'}), 400
+
+    conn = get_stock_db()
+    if not conn:
+        return jsonify({'error': '資料庫尚未初始化'}), 503
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        count_today = conn.execute(
+            "SELECT COUNT(*) FROM comments WHERE created_at LIKE ?",
+            (today + '%',)
+        ).fetchone()[0]
+        if count_today >= 500:
+            return jsonify({'error': '今日留言已達上限（500則），明天再來吧！'}), 429
+        conn.execute(
+            'INSERT INTO comments (nickname, content, created_at) VALUES (?, ?, ?)',
+            (nickname, content, datetime.now().isoformat())
+        )
+        conn.commit()
+        resp = jsonify({'ok': True})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+    finally:
+        conn.close()
+
+
 # -- Startup --
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8866))

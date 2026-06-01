@@ -335,6 +335,47 @@
     .hot-tse { background:#0d2b4c; color:#388bfd; }
     .hot-otc { background:#2b1e00; color:#d29922; }
 
+    /* ── 留言版 ── */
+    .comments-panel { margin-bottom:20px; }
+    .comment-form {
+      display:flex; flex-direction:column; gap:8px;
+      margin-bottom:16px;
+    }
+    .comment-form-row { display:flex; gap:8px; }
+    .comment-nick {
+      flex:0 0 110px; background:var(--surface2); border:1px solid var(--border);
+      border-radius:6px; padding:8px 10px; color:var(--text);
+      font-size:13px; outline:none;
+    }
+    .comment-nick:focus { border-color:var(--blue); }
+    .comment-textarea {
+      flex:1; background:var(--surface2); border:1px solid var(--border);
+      border-radius:8px; padding:10px 12px; color:var(--text);
+      font-size:13px; outline:none; resize:vertical; min-height:72px;
+      font-family:inherit; line-height:1.6;
+    }
+    .comment-textarea:focus { border-color:var(--blue); }
+    .comment-submit {
+      align-self:flex-end; background:var(--blue); color:#fff;
+      border:none; border-radius:6px; padding:8px 18px;
+      font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;
+      transition:opacity .2s;
+    }
+    .comment-submit:hover { opacity:.85; }
+    .comment-submit:disabled { opacity:.4; cursor:not-allowed; }
+    .comment-list { display:flex; flex-direction:column; gap:10px; }
+    .comment-item {
+      background:var(--surface2); border-radius:8px; padding:12px 14px;
+    }
+    .comment-meta {
+      display:flex; justify-content:space-between; align-items:center;
+      margin-bottom:6px;
+    }
+    .comment-nick-lbl { font-size:12px; font-weight:600; color:var(--blue); }
+    .comment-time { font-size:11px; color:var(--muted); }
+    .comment-text { font-size:13px; line-height:1.7; white-space:pre-wrap; word-break:break-all; }
+    .comment-empty { text-align:center; color:var(--muted); font-size:13px; padding:20px 0; }
+
     @media(max-width:700px) {
       .page-layout { flex-direction:column; }
       .sidebar { width:100%; position:static; display:flex; flex-direction:row; gap:8px; }
@@ -374,6 +415,10 @@
       <div class="sidebar-item" id="nav-exiting" onclick="togglePanel('exiting')">
         <span class="sidebar-icon">🔓</span>
         <span>即將出關</span>
+      </div>
+      <div class="sidebar-item" id="nav-comments" onclick="togglePanel('comments')">
+        <span class="sidebar-icon">💬</span>
+        <span>留言版</span>
       </div>
     </nav>
 
@@ -427,6 +472,31 @@
       <span id="upcomingCount" class="hot-count-badge" style="background:#2b1e00;color:var(--yellow);border-color:var(--yellow)">0 支</span>
     </div>
     <div id="upcomingGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 留言版 -->
+  <div id="commentsSection" class="comments-panel hidden">
+    <div class="comment-item" style="border:1px solid var(--yellow);background:#1f1800;margin-bottom:14px;">
+      <div class="comment-meta">
+        <span class="comment-nick-lbl">
+          <span style="background:var(--yellow);color:#000;font-size:10px;padding:1px 6px;border-radius:4px;margin-right:6px;">📌 置頂</span>
+          開發者
+        </span>
+      </div>
+      <div class="comment-text" style="font-size:15px;font-weight:600;">嗨各位賺大錢的股民們 還有甚麼要改進和開發的功能可以留言告訴我~</div>
+    </div>
+    <div class="hot-section-header" style="margin-bottom:14px">
+      <span class="hot-section-title">💬 匿名留言版</span>
+    </div>
+    <div class="comment-form">
+      <div class="comment-form-row">
+        <input id="commentNick" class="comment-nick" placeholder="暱稱（選填）" maxlength="20">
+        <button class="comment-submit" id="commentSubmitBtn" onclick="submitComment()">送出</button>
+      </div>
+      <textarea id="commentText" class="comment-textarea"
+        placeholder="輸入留言…（最多 100 字）" maxlength="100"></textarea>
+    </div>
+    <div id="commentList" class="comment-list"></div>
   </div>
 
   <!-- file:// 直接開啟時顯示啟動提示 -->
@@ -1743,12 +1813,14 @@ function renderHistory(rows) {
 let hotLoaded      = false;
 let upcomingLoaded = false;
 let exitingLoaded  = false;
+let commentsLoaded = false;
 
 function togglePanel(panel) {
   const cfg = {
-    disposal: { nav: 'nav-disposal', section: 'hotSection' },
-    upcoming: { nav: 'nav-upcoming', section: 'upcomingSection' },
-    exiting:  { nav: 'nav-exiting',  section: 'exitingSection' },
+    disposal: { nav: 'nav-disposal',  section: 'hotSection' },
+    upcoming: { nav: 'nav-upcoming',  section: 'upcomingSection' },
+    exiting:  { nav: 'nav-exiting',   section: 'exitingSection' },
+    comments: { nav: 'nav-comments',  section: 'commentsSection' },
   };
   const { nav: navId, section: secId } = cfg[panel] || {};
   if (!navId) return;
@@ -1763,6 +1835,66 @@ function togglePanel(panel) {
     if (panel === 'disposal' && !hotLoaded)      loadHotStocks();
     if (panel === 'upcoming' && !upcomingLoaded) loadUpcomingDisposal();
     if (panel === 'exiting'  && !exitingLoaded)  loadExitingDisposal();
+    if (panel === 'comments' && !commentsLoaded) loadComments();
+  }
+}
+
+// ── 留言版 ───────────────────────────────────────
+function fmtRelTime(isoStr) {
+  const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+  if (diff < 60)   return '剛剛';
+  if (diff < 3600) return `${Math.floor(diff/60)} 分鐘前`;
+  if (diff < 86400) return `${Math.floor(diff/3600)} 小時前`;
+  return `${Math.floor(diff/86400)} 天前`;
+}
+
+async function loadComments() {
+  commentsLoaded = true;
+  const list = $id('commentList');
+  list.innerHTML = '<div class="comment-empty">載入中…</div>';
+  let data = [];
+  try {
+    const r = await fetch('/api/comments', { cache: 'no-cache' });
+    if (r.ok) data = await r.json();
+  } catch(_) {}
+  renderComments(data);
+}
+
+function renderComments(data) {
+  const list = $id('commentList');
+  list.innerHTML = data.length
+    ? data.map(c => `
+    <div class="comment-item">
+      <div class="comment-meta">
+        <span class="comment-nick-lbl">${c.nickname || '匿名'}</span>
+        <span class="comment-time">${fmtRelTime(c.created_at)}</span>
+      </div>
+      <div class="comment-text">${c.content.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+    </div>`).join('')
+    : '<div class="comment-empty">還沒有留言，來第一個留言吧！</div>';
+}
+
+async function submitComment() {
+  const content  = ($id('commentText').value  || '').trim();
+  const nickname = ($id('commentNick').value  || '').trim() || '匿名';
+  if (!content) return;
+
+  const btn = $id('commentSubmitBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, nickname }),
+    });
+    const res = await r.json();
+    if (!r.ok) { alert(res.error || '送出失敗'); return; }
+    $id('commentText').value = '';
+    await loadComments();
+  } catch(_) {
+    alert('送出失敗，請稍後再試');
+  } finally {
+    btn.disabled = false;
   }
 }
 
