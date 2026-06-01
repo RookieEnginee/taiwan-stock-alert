@@ -21,4 +21,9 @@ jobs:
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-        run: python stock_db.py
+        run: |
+          if [ "${{ github.event.schedule }}" = "30 6 * * 1-5" ]; then
+            python stock_db.py --prices-only
+          else
+            python stock_db.py
+          fi

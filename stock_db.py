@@ -809,6 +809,69 @@ def update_all(verbose=True):
     return stats
 
 
+def update_prices_only(verbose=True):
+    """只更新股價，不動注意股/處置股（供收盤後 14:30 使用）"""
+    def log(msg):
+        if verbose:
+            print(msg)
+
+    start_time = datetime.now()
+    log(f'\n{"="*55}')
+    log(f' 股價更新（僅股價）  {start_time.strftime("%Y-%m-%d %H:%M:%S")}')
+    log(f'{"="*55}')
+
+    conn = get_db()
+
+    existing_trade_days = conn.execute(
+        "SELECT COUNT(DISTINCT date) FROM daily_price WHERE market='TSE'"
+    ).fetchone()[0]
+    fetch_days = 7 if existing_trade_days >= 60 else 90
+    log(f'  DB 現有 {existing_trade_days} 個交易日 → 抓取最近 {fetch_days} 個日曆天')
+
+    tse_all, otc_all, tse_names, otc_names = fetch_all_prices_bulk(days=fetch_days)
+
+    now_str = datetime.now().isoformat()
+    name_rows = (
+        [(code, name, 'TSE', now_str) for code, name in tse_names.items() if name] +
+        [(code, name, 'OTC', now_str) for code, name in otc_names.items() if name]
+    )
+    if name_rows:
+        conn.executemany(
+            'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
+            name_rows
+        )
+        conn.commit()
+        log(f'  寫入股票名稱：TSE {len(tse_names)} + OTC {len(otc_names)} 支')
+
+    log(f'  寫入 TSE {len(tse_all)} 支股價...')
+    tse_price = bulk_insert_prices(conn, tse_all, 'TSE')
+    conn.commit()
+    log(f'  → TSE 共 {tse_price} 筆')
+
+    log(f'  寫入 OTC {len(otc_all)} 支股價...')
+    otc_price = bulk_insert_prices(conn, otc_all, 'OTC')
+    conn.commit()
+    log(f'  → OTC 共 {otc_price} 筆')
+
+    dp, dn = cleanup(conn)
+    conn.commit()
+    log(f'\n[CLEANUP] 清除 {dp} 筆舊股價、{dn} 筆舊注意記錄')
+
+    elapsed = (datetime.now() - start_time).total_seconds()
+    msg = f'TSE股價:{tse_price} OTC股價:{otc_price} 耗時:{elapsed:.0f}s'
+    conn.execute(
+        'INSERT INTO update_log (updated_at, status, message) VALUES (?,?,?)',
+        (datetime.now().isoformat(), 'OK(prices-only)', msg)
+    )
+    conn.commit()
+    conn.close()
+
+    log(f'\n{"="*55}')
+    log(f' 股價更新完成！耗時 {elapsed:.1f} 秒')
+    log(f' {msg}')
+    log(f'{"="*55}\n')
+
+
 def show_status():
     """顯示資料庫現況"""
     if not os.path.exists(DB_PATH):
@@ -1033,6 +1096,9 @@ if __name__ == '__main__':
         conn.commit()
         conn.close()
         print(f'  → 寫入 {n} 筆股價')
+    elif '--prices-only' in args:
+        init_db()
+        update_prices_only()
     elif '--test-price' in args:
         # 快速測試：插入一筆假股價，驗證 executemany 是否正常
         init_db()
