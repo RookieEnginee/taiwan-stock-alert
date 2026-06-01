@@ -632,8 +632,6 @@ def update_all(verbose=True):
     # ── Step 2：TSE 處置股 ─────────────────────
     time.sleep(2)   # 避免連續打 TWSE 被 rate limit
     log('\n[2/6] TSE 處置股（TWSE）...')
-    conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
-    conn.commit()
     tse_disp_codes = set()
     tse_d_stocks, tse_d_rows = [], []
     for row in fetch_tse_disposal():
@@ -658,19 +656,21 @@ def update_all(verbose=True):
                            str(row[5]) if len(row) > 5 else '',
                            str(row[7]) if len(row) > 7 else '',
                            str(row[8]) if len(row) > 8 else ''))
-    if tse_d_stocks:
+    if tse_d_rows:
+        conn.execute("DELETE FROM disposition_stocks WHERE market='TSE'")
         conn.executemany(
             'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
             tse_d_stocks
         )
-    if tse_d_rows:
         conn.executemany(
             'INSERT OR REPLACE INTO disposition_stocks '
             '(code,name,market,announce_date,start_date,end_date,reason,measure,content) '
             'VALUES (?,?,?,?,?,?,?,?,?)',
             tse_d_rows
         )
-    conn.commit()
+        conn.commit()
+    else:
+        log('  → TSE 處置股 API 回傳 0 筆，略過更新（保留舊資料）')
     stats['tse_disposal'] = len(tse_d_rows)
     log(f'  → {stats["tse_disposal"]} 筆，{len(tse_disp_codes)} 支股票')
 
@@ -710,8 +710,6 @@ def update_all(verbose=True):
 
     # ── Step 4：OTC 處置股 ─────────────────────
     log('\n[4/6] OTC 處置股（TPEx）...')
-    conn.execute("DELETE FROM disposition_stocks WHERE market='OTC'")
-    conn.commit()
     otc_disp_codes = set()
     otc_d_stocks, otc_d_rows = [], []
     for item in fetch_otc_disposal():
@@ -733,19 +731,21 @@ def update_all(verbose=True):
                            str(item.get('DispositionReasons', '')),
                            str(item.get('DispositionMeasure', '')),
                            str(item.get('DisposalCondition', ''))))
-    if otc_d_stocks:
+    if otc_d_rows:
+        conn.execute("DELETE FROM disposition_stocks WHERE market='OTC'")
         conn.executemany(
             'INSERT OR REPLACE INTO stocks (code,name,market,updated) VALUES (?,?,?,?)',
             otc_d_stocks
         )
-    if otc_d_rows:
         conn.executemany(
             'INSERT OR REPLACE INTO disposition_stocks '
             '(code,name,market,announce_date,start_date,end_date,reason,measure,content) '
             'VALUES (?,?,?,?,?,?,?,?,?)',
             otc_d_rows
         )
-    conn.commit()
+        conn.commit()
+    else:
+        log('  → OTC 處置股 API 回傳 0 筆，略過更新（保留舊資料）')
     stats['otc_disposal'] = len(otc_d_rows)
     log(f'  → {stats["otc_disposal"]} 筆，{len(otc_disp_codes)} 支股票')
 
