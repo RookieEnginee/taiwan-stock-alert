@@ -261,6 +261,87 @@
     .ac-tse  { background:#0d2b4c; color:#388bfd; }
     .ac-otc  { background:#2b1e00; color:#d29922; }
 
+    /* ── Page Layout（側欄 + 主內容）── */
+    .page-layout {
+      display:flex; gap:16px; align-items:flex-start;
+    }
+    .sidebar {
+      width:108px; flex-shrink:0;
+      position:sticky; top:20px;
+    }
+    .sidebar-item {
+      display:flex; flex-direction:column; align-items:center; gap:5px;
+      padding:12px 8px; border-radius:10px; cursor:pointer;
+      font-size:12px; color:var(--muted);
+      border:1px solid transparent;
+      transition:all .15s; margin-bottom:8px;
+      text-align:center; user-select:none;
+    }
+    .sidebar-item:hover {
+      background:var(--surface); border-color:var(--border); color:var(--text);
+    }
+    .sidebar-item.active {
+      background:var(--surface); border-color:var(--red); color:var(--red);
+    }
+    .sidebar-icon { font-size:22px; line-height:1; }
+    .main-content { flex:1; min-width:0; }
+
+    /* ── Hot Stocks Panel ── */
+    .hot-section { margin-bottom:20px; }
+    .hot-section-header {
+      display:flex; align-items:center; gap:10px; margin-bottom:12px;
+    }
+    .hot-section-title { font-size:14px; font-weight:600; color:var(--muted); }
+    .hot-count-badge {
+      font-size:11px; font-weight:700;
+      background:#2b0a0a; color:var(--red);
+      border:1px solid var(--red);
+      padding:2px 8px; border-radius:10px;
+    }
+    .hot-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+      gap:8px;
+    }
+    .hot-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; padding:12px 14px;
+      cursor:pointer; user-select:none;
+      transition:border-color .15s, background .15s, transform .1s;
+    }
+    .hot-card:hover { border-color:var(--red); background:#1a0b0b; transform:translateY(-1px); }
+    .hot-card:active { transform:translateY(0); }
+    .hot-card.upcoming:hover { border-color:var(--yellow); background:#1f1800; }
+    .hot-card.exiting:hover  { border-color:var(--green);  background:#0d1f12; }
+    .hot-card-header {
+      display:flex; justify-content:space-between; align-items:center;
+      margin-bottom:6px; gap:6px;
+    }
+    .hot-card-name {
+      font-size:13px; color:var(--text); font-weight:500;
+      flex:1; min-width:0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .hot-card-code { font-size:12px; color:var(--muted); flex-shrink:0; }
+    .hot-card-price {
+      font-size:18px; font-weight:700;
+      margin-bottom:4px;
+    }
+    .hot-card-chg-row {
+      display:flex; justify-content:space-between; align-items:center;
+      font-size:12px;
+    }
+    .hot-card-route { font-size:10px; color:var(--yellow); margin-top:4px; text-align:right; }
+    .hot-tse { background:#0d2b4c; color:#388bfd; }
+    .hot-otc { background:#2b1e00; color:#d29922; }
+
+    @media(max-width:700px) {
+      .page-layout { flex-direction:column; }
+      .sidebar { width:100%; position:static; display:flex; flex-direction:row; gap:8px; }
+      .sidebar-item { flex-direction:row; padding:8px 12px; margin-bottom:0; font-size:13px; }
+      .sidebar-icon { font-size:16px; }
+    }
+
     /* ── Responsive ── */
     @media(max-width:600px) {
       body { padding:16px 12px; }
@@ -277,6 +358,27 @@
     <h1>🔍 台股注意股・處置股查詢系統</h1>
     <p>即時分析個股注意/處置狀態，精算明日觸發條件與處置倒數</p>
   </header>
+
+  <div class="page-layout">
+
+    <!-- 左側導航 -->
+    <nav class="sidebar">
+      <div class="sidebar-item" id="nav-disposal" onclick="togglePanel('disposal')">
+        <span class="sidebar-icon">🚨</span>
+        <span>處置中</span>
+      </div>
+      <div class="sidebar-item" id="nav-upcoming" onclick="togglePanel('upcoming')">
+        <span class="sidebar-icon">⏳</span>
+        <span>即將處置</span>
+      </div>
+      <div class="sidebar-item" id="nav-exiting" onclick="togglePanel('exiting')">
+        <span class="sidebar-icon">🔓</span>
+        <span>即將出關</span>
+      </div>
+    </nav>
+
+    <!-- 主內容 -->
+    <div class="main-content">
 
   <!-- Search -->
   <div class="search-wrap">
@@ -295,9 +397,36 @@
   </div>
 
   <div id="infoBanner" class="info-banner">
-    📡 資料來源：<strong>上市</strong>（TWSE）官方 API ／ <strong>上櫃</strong>（TPEx）OpenAPI + Yahoo Finance，每日收盤後更新。<br>
+    📡 資料來源：<strong>上市</strong>（TWSE）官方 API ／ <strong>上櫃</strong>（TPEx）OpenAPI，每日收盤後更新。<br>
     ⚡ 支援<strong>上市（TSE）</strong>及<strong>上櫃（OTC）</strong>股票查詢；輸入代碼後自動偵測市場。<br>
-    ⚠️ 注意股門檻還需「與大盤差幅≥20%」條件，此系統計算以<strong>單純漲跌幅門檻</strong>為參考，實際觸發由交易所電腦判定。
+    ⚠️ 此系統計算以<strong>單純漲跌幅門檻</strong>為參考，實際觸發由交易所電腦判定。
+  </div>
+
+  <!-- 目前處置中股票 -->
+  <div id="hotSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">🚨 目前處置中股票</span>
+      <span id="hotCount" class="hot-count-badge">0 支</span>
+    </div>
+    <div id="hotGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 即將出關股票 -->
+  <div id="exitingSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">🔓 今日最後一天處置（明日解除）</span>
+      <span id="exitingCount" class="hot-count-badge" style="background:#0d2b12;color:var(--green);border-color:var(--green)">0 支</span>
+    </div>
+    <div id="exitingGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 即將處置股票 -->
+  <div id="upcomingSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">⏳ 即將進入處置</span>
+      <span id="upcomingCount" class="hot-count-badge" style="background:#2b1e00;color:var(--yellow);border-color:var(--yellow)">0 支</span>
+    </div>
+    <div id="upcomingGrid" class="hot-grid"></div>
   </div>
 
   <!-- file:// 直接開啟時顯示啟動提示 -->
@@ -307,9 +436,8 @@
     font-size:14px; color:#f0c060; line-height:1.8;
   ">
     ℹ️ <strong>偵測到您直接用檔案開啟（file://）</strong><br>
-    &nbsp;&nbsp;✅ <strong>上市（TSE）</strong>：正常可查（TWSE API 支援 CORS）<br>
-    &nbsp;&nbsp;⚠️ <strong>上櫃（OTC）</strong>：<strong>Firefox</strong> 可直接查詢；<strong>Chrome / Edge</strong> 因 CORS 限制無法查詢<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;→ Chrome/Edge 用戶請改用 <strong>Firefox</strong>，或雙擊 <strong>「啟動查詢系統.bat」</strong> 用 Python server 開啟
+    &nbsp;&nbsp;⚠️ 上市/上櫃股價資料需透過伺服器存取資料庫，<strong>file:// 模式僅支援查詢注意股/處置股狀態</strong>。<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;→ 請雙擊 <strong>「啟動查詢系統.bat」</strong> 用 Python server 開啟以取得完整功能。
   </div>
 
   <!-- Loading -->
@@ -515,6 +643,9 @@
     </div>
 
   </div><!-- /resultsDiv -->
+
+    </div><!-- /main-content -->
+  </div><!-- /page-layout -->
 
 </div><!-- /container -->
 
@@ -915,94 +1046,6 @@ async function getDisposalList() {
 // 股價來源：TPEx tpex_mainboard_daily_close_quotes
 // - 一般模式（有 server）：透過後端快取（/yf/history）
 // - file:// 模式：直連 TPEx OpenAPI（需瀏覽器允許 CORS）
-async function getOTCDailyData(code) {
-  let arr;
-
-  if (IS_FILE) {
-    // file:// 模式：嘗試 Yahoo Finance（Firefox 允許，Chrome/Edge 因 CORS 被擋）
-    const ticker = `${code}.TWO`;
-    const yfUrl  = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=90d`;
-    let yfResp;
-    try {
-      yfResp = await fetch(yfUrl, { cache: 'no-cache' });
-    } catch (e) {
-      // Chrome/Edge 的 file:// 模式因 CORS 安全限制封鎖了此請求
-      throw new Error(
-        `Chrome / Edge 的安全限制（CORS）封鎖了 file:// 模式的上櫃股票查詢。\n\n` +
-        `解決方法（選一）：\n` +
-        `① 改用 Firefox 開啟此 HTML 檔（Firefox 允許 file:// 跨域，直接有效）\n` +
-        `② 雙擊同資料夾的「啟動查詢系統.bat」，用 Python server 開啟`
-      );
-    }
-    if (!yfResp.ok) {
-      throw new Error(
-        `查無上櫃 ${code}（${ticker}）資料（HTTP ${yfResp.status}）。\n` +
-        `可能不是上櫃一般板股票，或改用 Python server 查詢。`
-      );
-    }
-    const payload = await yfResp.json();
-    const yfErr = payload?.chart?.error;
-    if (yfErr) throw new Error(`Yahoo Finance 錯誤：${yfErr.description || yfErr.code}`);
-    const yfResult = payload?.chart?.result?.[0];
-    if (!yfResult) throw new Error(`Yahoo Finance 查無 ${code}（${ticker}）資料`);
-
-    const timestamps = yfResult.timestamp || [];
-    const q          = yfResult.indicators?.quote?.[0] || {};
-    arr = timestamps.map((ts, i) => ({
-      date:   new Date(ts * 1000).toISOString().split('T')[0],
-      open:   q.open?.[i]   || q.close?.[i] || 0,
-      high:   q.high?.[i]   || q.close?.[i] || 0,
-      low:    q.low?.[i]    || q.close?.[i] || 0,
-      close:  q.close?.[i]  || 0,
-      volume: q.volume?.[i] || 0,
-    })).filter(item => item.close);
-
-    if (arr.length === 0) {
-      throw new Error(`查無上櫃 ${code} 歷史股價（Yahoo Finance 回傳空資料）`);
-    }
-  } else {
-    // 一般模式：透過後端快取（Yahoo Finance .TWO）
-    const url = `/yf/history?code=${encodeURIComponent(code)}&market=OTC`;
-    let r;
-    try {
-      r = await fetch(url, { cache: 'no-cache' });
-    } catch (e) {
-      throw new Error(
-        `無法連線至本地 server（/yf/history）。\n` +
-        `請確認 Python server 正在執行，或雙擊「一鍵部署.bat」啟動。`
-      );
-    }
-    // 無論成功或失敗，都先解析 JSON 以取得實際錯誤訊息
-    let res;
-    try { res = await r.json(); } catch(_) { res = {}; }
-    if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
-    if (res.error) throw new Error(res.error);
-    if (!Array.isArray(res) || res.length === 0) return { data: [], name: '' };
-    arr = res;
-  }
-
-  const data = arr.map((item, i) => {
-    const parts = (item.date || '').split('-');
-    const d = parts.length === 3
-      ? new Date(+parts[0], +parts[1] - 1, +parts[2])
-      : new Date(item.date);
-    const prevClose = i > 0 ? arr[i - 1].close : item.close;
-    const chgVal = (item.close || 0) - prevClose;
-    const chgStr = chgVal > 0 ? `+${nf(chgVal)}` : nf(chgVal);
-    return {
-      date:   d,
-      vol:    item.volume || 0,
-      val:    0,
-      open:   item.open   || 0,
-      high:   item.high   || 0,
-      low:    item.low    || 0,
-      close:  item.close  || 0,
-      chgStr: chgStr,
-      trades: 0
-    };
-  });
-  return { data, name: '' };
-}
 
 // TPEx 注意股歷史（過濾指定代碼，轉成與 TWSE 相同的 row 格式）
 async function getOTCNoticeHistory(code) {
@@ -1282,15 +1325,19 @@ function renderUI(code, stockName, m) {
   set('tradeDate', `最後交易日：${fmtDate(last.date)}`);
 
   // Price change
-  const chgEl = $id('priceChg');
+  const chgEl   = $id('priceChg');
+  const chgVal  = last.chg || 0;
+  const prevClose = last.close - chgVal;
+  const chgPct  = prevClose > 0 ? (chgVal / prevClose * 100) : 0;
+  const pctStr  = `(${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
   if (last.chgStr.startsWith('+')) {
-    chgEl.textContent = `▲ +${last.chgStr.replace('+','')}`;
+    chgEl.textContent = `▲ +${last.chgStr.replace('+','')} ${pctStr}`;
     chgEl.className = 'price-chg up';
   } else if (last.chgStr.startsWith('-')) {
-    chgEl.textContent = `▼ ${last.chgStr}`;
+    chgEl.textContent = `▼ ${last.chgStr} ${pctStr}`;
     chgEl.className = 'price-chg dn';
   } else {
-    chgEl.textContent = `─ ${last.chgStr}`;
+    chgEl.textContent = `─ ${last.chgStr} ${pctStr}`;
     chgEl.className = 'price-chg fl';
   }
 
@@ -1691,6 +1738,139 @@ function renderHistory(rows) {
 })();
 
 // ═══════════════════════════════════════════════
+// 側欄導航
+// ═══════════════════════════════════════════════
+let hotLoaded      = false;
+let upcomingLoaded = false;
+let exitingLoaded  = false;
+
+function togglePanel(panel) {
+  const cfg = {
+    disposal: { nav: 'nav-disposal', section: 'hotSection' },
+    upcoming: { nav: 'nav-upcoming', section: 'upcomingSection' },
+    exiting:  { nav: 'nav-exiting',  section: 'exitingSection' },
+  };
+  const { nav: navId, section: secId } = cfg[panel] || {};
+  if (!navId) return;
+
+  const navItem  = $id(navId);
+  const section  = $id(secId);
+  const isActive = navItem.classList.contains('active');
+  navItem.classList.toggle('active', !isActive);
+  section.classList.toggle('hidden', isActive);
+
+  if (!isActive) {
+    if (panel === 'disposal' && !hotLoaded)      loadHotStocks();
+    if (panel === 'upcoming' && !upcomingLoaded) loadUpcomingDisposal();
+    if (panel === 'exiting'  && !exitingLoaded)  loadExitingDisposal();
+  }
+}
+
+async function loadHotStocks() {
+  if (IS_FILE) return;
+  hotLoaded = true;
+  try {
+    const r = await fetch('/db/all_notices', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // ── 處置中 ──
+    const disposals = d.disposals || [];
+    $id('hotGrid').innerHTML = disposals.length === 0
+      ? '<div style="color:var(--muted);font-size:13px;padding:8px 0">目前無處置中股票</div>'
+      : disposals.map(s => buildHotCard(s, '', '')).join('');
+    $id('hotCount').textContent = `${disposals.length} 支`;
+
+  } catch(_) {}
+}
+
+async function loadExitingDisposal() {
+  if (IS_FILE) return;
+  exitingLoaded = true;
+  const grid = $id('exitingGrid');
+  grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">載入中…</div>';
+  try {
+    const r = await fetch('/db/exiting_disposal', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const list = await r.json();
+    if (list.length === 0) {
+      grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">今日無股票解除處置</div>';
+      return;
+    }
+    grid.innerHTML = list.map(s =>
+      buildHotCard(s, 'exiting', `處置至 ${s.end_date || '--'}`)
+    ).join('');
+    $id('exitingCount').textContent = `${list.length} 支`;
+  } catch(_) {}
+}
+
+async function loadUpcomingDisposal() {
+  if (IS_FILE) return;
+  upcomingLoaded = true;
+  const grid = $id('upcomingGrid');
+  grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">計算中…</div>';
+  try {
+    const r = await fetch('/db/approaching_disposal', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const list = await r.json();
+    if (list.length === 0) {
+      grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">目前無即將處置股票</div>';
+      return;
+    }
+    // 找最接近的路線標籤
+    function nearestRoute(s) {
+      const map = { r1need:'路線①', r2need:'路線②', r3need:'路線③', r4need:'路線④' };
+      const min = s.min_need;
+      const hit = Object.entries(map).filter(([k]) => s[k] === min).map(([,v]) => v);
+      return hit.join('・');
+    }
+    grid.innerHTML = list.map(s => {
+      const chg = s.price_change || 0;
+      const codeColor = chg > 0 ? 'var(--red)' : chg < 0 ? 'var(--green)' : 'var(--muted)';
+      return buildHotCard(s, 'upcoming', `${nearestRoute(s)} 差1次`);
+    }).join('');
+    $id('upcomingCount').textContent = `${list.length} 支`;
+  } catch(_) {}
+}
+
+function buildHotCard(s, extraClass, bottomLine) {
+  const chg   = s.price_change || 0;
+  const close = s.close_price  || 0;
+  const prev  = close - chg;
+  const pct   = prev > 0 ? Math.abs(chg / prev * 100) : 0;
+  const color = chg > 0 ? 'var(--red)' : chg < 0 ? 'var(--green)' : 'var(--muted)';
+  const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '─';
+  const chgStr = `${arrow} ${chg >= 0 ? '+' : ''}${chg.toFixed(2)}`;
+  const pctStr = `${pct.toFixed(2)}%`;
+  return `<div class="hot-card${extraClass ? ' '+extraClass : ''}" onclick="hotCardClick('${s.code}','${s.market}')">
+    <div class="hot-card-header">
+      <span class="hot-card-name">${s.name}</span>
+      <span class="hot-card-code">${s.code}</span>
+    </div>
+    <div class="hot-card-price" style="color:${color}">${close > 0 ? close.toFixed(2) : '--'}</div>
+    <div class="hot-card-chg-row" style="color:${color}">
+      <span>${chgStr}</span><span>${pctStr}</span>
+    </div>
+    ${bottomLine ? `<div class="hot-card-route">${bottomLine}</div>` : ''}
+  </div>`;
+}
+
+function fmtChg(change, close) {
+  if (!change && change !== 0) return '';
+  const prev = close - change;
+  const pct  = prev > 0 ? (change / prev * 100) : 0;
+  const sign = change > 0 ? '+' : '';
+  return `${sign}${change.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+}
+
+function hotCardClick(code, market) {
+  currentMarket = market;
+  $id('codeInput').value = code;
+  $id('acDropdown').classList.remove('open');
+  doSearch();
+}
+
+// ═══════════════════════════════════════════════
 // DB 輔助函式（優先從 stock_data.db 取資料）
 // ═══════════════════════════════════════════════
 
@@ -1733,6 +1913,7 @@ async function getDbPrices(code, market) {
         high:   item.high  || 0,
         low:    item.low   || 0,
         close:  item.close || 0,
+        chg:    chgVal,
         chgStr: chgVal >= 0 ? `+${nf(chgVal)}` : nf(chgVal),
         trades: 0,
       };
@@ -1844,19 +2025,15 @@ async function doSearchOTC(code) {
   const entry = (stockList || []).find(s => s.code === code && s.market === 'OTC');
   let stockName = entry ? entry.name : '';
 
-  // ① 股價：優先 DB（需 ≥ 6 天才夠分析），否則 fallback Yahoo Finance
+  // ① 股價：從 DB 載入
   set('loadingMsg', '① 載入上櫃股價資料…');
   let dailyData = await getDbPrices(code, 'OTC');
-  if (dailyData && dailyData.length < 6) dailyData = null;  // DB 只有今日單筆，不夠分析
+  if (dailyData && dailyData.length < 6) dailyData = null;
 
   if (!dailyData) {
-    set('loadingMsg', '① 從 Yahoo Finance 載入上櫃股價…');
-    const result = await getOTCDailyData(code);
-    dailyData = result.data;
-    if (result.name && !stockName) stockName = result.name;
-  } else {
-    set('loadingMsg', '① 股價已從資料庫載入 ✓');
+    throw new Error(`查無上櫃 ${code} 的股價資料，請確認代碼正確，或等待資料庫每日更新後再查詢。`);
   }
+  set('loadingMsg', '① 股價已從資料庫載入 ✓');
 
   if (dailyData.length === 0) {
     throw new Error(
