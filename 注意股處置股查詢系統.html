@@ -1826,12 +1826,18 @@ function togglePanel(panel) {
   if (!navId) return;
 
   const navItem  = $id(navId);
-  const section  = $id(secId);
   const isActive = navItem.classList.contains('active');
-  navItem.classList.toggle('active', !isActive);
-  section.classList.toggle('hidden', isActive);
 
+  // 先關閉所有面板
+  Object.values(cfg).forEach(({ nav, section }) => {
+    $id(nav).classList.remove('active');
+    $id(section).classList.add('hidden');
+  });
+
+  // 若原本是關閉的，才打開（點已開面板 = 收起）
   if (!isActive) {
+    navItem.classList.add('active');
+    $id(secId).classList.remove('hidden');
     if (panel === 'disposal' && !hotLoaded)      loadHotStocks();
     if (panel === 'upcoming' && !upcomingLoaded) loadUpcomingDisposal();
     if (panel === 'exiting'  && !exitingLoaded)  loadExitingDisposal();
@@ -1866,7 +1872,7 @@ function renderComments(data) {
     ? data.map(c => `
     <div class="comment-item">
       <div class="comment-meta">
-        <span class="comment-nick-lbl">${c.nickname || '匿名'}</span>
+        <span class="comment-nick-lbl">${(c.nickname || '匿名').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>
         <span class="comment-time">${fmtRelTime(c.created_at)}</span>
       </div>
       <div class="comment-text">${c.content.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>

@@ -672,7 +672,7 @@ def post_comment():
             return jsonify({'error': '今日留言已達上限（500則），明天再來吧！'}), 429
         conn.execute(
             'INSERT INTO comments (nickname, content, created_at) VALUES (?, ?, ?)',
-            (nickname, content, datetime.now().isoformat())
+            (nickname, content, datetime.utcnow().isoformat() + 'Z')
         )
         conn.commit()
         resp = jsonify({'ok': True})
