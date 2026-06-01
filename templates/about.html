@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>關於本站 — 台股注意股・處置股查詢系統</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background:#0d1117; color:#e6edf3;
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      padding:40px 20px; line-height:1.8;
+    }
+    .container { max-width:800px; margin:0 auto; }
+    h1 { font-size:24px; font-weight:700; margin-bottom:8px; }
+    h2 { font-size:16px; font-weight:600; color:#388bfd; margin:28px 0 10px; }
+    p  { font-size:14px; color:#b0b8c4; margin-bottom:10px; }
+    ul { font-size:14px; color:#b0b8c4; margin:0 0 10px 20px; }
+    li { margin-bottom:6px; }
+    a  { color:#388bfd; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .subtitle { font-size:14px; color:#7d8590; margin-bottom:32px; }
+    .back { display:inline-block; margin-bottom:28px; font-size:13px; color:#7d8590; }
+    .back:hover { color:#e6edf3; }
+    .card {
+      background:#161b22; border:1px solid #30363d;
+      border-radius:10px; padding:20px 24px; margin-bottom:16px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <a class="back" href="/">← 返回查詢系統</a>
+  <h1>關於本站</h1>
+  <p class="subtitle">台股注意股・處置股查詢系統</p>
+
+  <div class="card">
+    <h2>網站簡介</h2>
+    <p>本網站是一個免費的台灣股市輔助查詢工具，專注於<strong>注意股</strong>與<strong>處置股</strong>的狀態追蹤與風險分析。</p>
+    <p>台灣證券交易所（TWSE）及櫃買中心（TPEx）會對異常交易的股票列為「注意股」，情節嚴重者進一步採取「處置措施」，限制其交易方式。本站協助投資人掌握個股的注意/處置狀態，並精算距離觸發處置的剩餘次數。</p>
+  </div>
+
+  <div class="card">
+    <h2>主要功能</h2>
+    <ul>
+      <li>查詢上市（TSE）及上櫃（OTC）個股的注意股／處置股狀態</li>
+      <li>四條處置路線進度分析（連續天數、近10日、近30日）</li>
+      <li>明日觸發注意股條件試算（漲跌幅門檻、成交量門檻）</li>
+      <li>近30日 K 線走勢圖及成交量</li>
+      <li>目前處置中、即將處置、即將出關股票總覽</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>資料來源</h2>
+    <ul>
+      <li><a href="https://www.twse.com.tw/" target="_blank" rel="noopener">台灣證券交易所（TWSE）</a> — 上市股票注意股、處置股、股價資料</li>
+      <li><a href="https://www.tpex.org.tw/" target="_blank" rel="noopener">財團法人中華民國證券櫃檯買賣中心（TPEx）</a> — 上櫃股票注意股、處置股、股價資料</li>
+    </ul>
+    <p>所有資料均來自上述官方機構的公開 API，每日收盤後自動更新。本站不對資料之即時性及正確性負責，投資決策請以官方公告為準。</p>
+  </div>
+
+  <div class="card">
+    <h2>免責聲明</h2>
+    <p>本網站所有資訊僅供參考，不構成任何投資建議。股市投資有風險，入市前請審慎評估。本站計算結果係依公開規則推算，實際注意股/處置股認定以交易所電腦系統為準。</p>
+  </div>
+</div>
+</body>
+</html>
