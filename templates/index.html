@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台股注意股・處置股查詢系統</title>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-CTNJCMM0X0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-CTNJCMM0X0');
+  </script>
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9501565499768681"
+       crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css?v={{ css_v }}">
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>🔍 台股注意股・處置股查詢系統</h1>
+    <p>即時分析個股注意/處置狀態，精算明日觸發條件與處置倒數</p>
+  </header>
+
+  <div class="page-layout">
+
+    <!-- 左側導航 -->
+    <nav class="sidebar">
+      <div class="sidebar-item" id="nav-disposal" onclick="togglePanel('disposal')">
+        <span class="sidebar-icon">🚨</span>
+        <span>處置中</span>
+      </div>
+      <div class="sidebar-item" id="nav-upcoming" onclick="togglePanel('upcoming')">
+        <span class="sidebar-icon">⏳</span>
+        <span>即將處置</span>
+      </div>
+      <div class="sidebar-item" id="nav-exiting" onclick="togglePanel('exiting')">
+        <span class="sidebar-icon">🔓</span>
+        <span>即將出關</span>
+      </div>
+      <div class="sidebar-item" id="nav-comments" onclick="togglePanel('comments')">
+        <span class="sidebar-icon">💬</span>
+        <span>留言版</span>
+      </div>
+    </nav>
+
+    <!-- 主內容 -->
+    <div class="main-content">
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <div class="ac-wrap">
+      <input id="codeInput" class="search-input"
+        placeholder="輸入股票代碼或名稱，例如：景 / 3037"
+        maxlength="8"
+        autocomplete="off"
+        oninput="acOnInput()"
+        onfocus="acOnFocus()"
+        onblur="acOnBlur()"
+        onkeydown="acOnKeyDown(event)">
+      <div id="acDropdown" class="ac-dropdown"></div>
+    </div>
+    <button id="searchBtn" class="search-btn" onclick="doSearch()">查詢</button>
+  </div>
+
+  <div id="infoBanner" class="info-banner">
+    📡 資料來源：<strong>上市</strong>（TWSE）官方 API ／ <strong>上櫃</strong>（TPEx）OpenAPI，每日收盤後更新。<br>
+    ⚡ 支援<strong>上市（TSE）</strong>及<strong>上櫃（OTC）</strong>股票查詢；輸入代碼後自動偵測市場。<br>
+    ⚠️ 此系統計算以<strong>單純漲跌幅門檻</strong>為參考，實際觸發由交易所電腦判定。
+  </div>
+
+  <!-- 目前處置中股票 -->
+  <div id="hotSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">🚨 目前處置中股票</span>
+      <span id="hotCount" class="hot-count-badge">0 支</span>
+    </div>
+    <div id="hotGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 即將出關股票 -->
+  <div id="exitingSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">🔓 今日最後一天處置（明日解除）</span>
+      <span id="exitingCount" class="hot-count-badge" style="background:#0d2b12;color:var(--green);border-color:var(--green)">0 支</span>
+    </div>
+    <div id="exitingGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 即將處置股票 -->
+  <div id="upcomingSection" class="hot-section hidden">
+    <div class="hot-section-header">
+      <span class="hot-section-title">⏳ 即將進入處置</span>
+      <span id="upcomingCount" class="hot-count-badge" style="background:#2b1e00;color:var(--yellow);border-color:var(--yellow)">0 支</span>
+    </div>
+    <div id="upcomingGrid" class="hot-grid"></div>
+  </div>
+
+  <!-- 留言版 -->
+  <div id="commentsSection" class="comments-panel hidden">
+    <div class="comment-item" style="border:1px solid var(--yellow);background:#1f1800;margin-bottom:14px;">
+      <div class="comment-meta">
+        <span class="comment-nick-lbl">
+          <span style="background:var(--yellow);color:#000;font-size:10px;padding:1px 6px;border-radius:4px;margin-right:6px;">📌 置頂</span>
+          開發者
+        </span>
+      </div>
+      <div class="comment-text" style="font-size:15px;font-weight:600;">嗨各位賺大錢的股民們 還有甚麼要改進和開發的功能可以留言告訴我~</div>
+    </div>
+    <div class="hot-section-header" style="margin-bottom:14px">
+      <span class="hot-section-title">💬 匿名留言版</span>
+    </div>
+    <div class="comment-form">
+      <div class="comment-form-row">
+        <input id="commentNick" class="comment-nick" placeholder="暱稱（選填）" maxlength="20">
+        <button class="comment-submit" id="commentSubmitBtn" onclick="submitComment()">送出</button>
+      </div>
+      <textarea id="commentText" class="comment-textarea"
+        placeholder="輸入留言…（最多 100 字）" maxlength="100"></textarea>
+    </div>
+    <div id="commentList" class="comment-list"></div>
+  </div>
+
+  <!-- file:// 直接開啟時顯示啟動提示 -->
+  <div id="corsWarning" class="hidden" style="
+    background:#1f1800; border:1px solid #d29922;
+    border-radius:8px; padding:16px; margin-bottom:24px;
+    font-size:14px; color:#f0c060; line-height:1.8;
+  ">
+    ℹ️ <strong>偵測到您直接用檔案開啟（file://）</strong><br>
+    &nbsp;&nbsp;⚠️ 上市/上櫃股價資料需透過伺服器存取資料庫，<strong>file:// 模式僅支援查詢注意股/處置股狀態</strong>。<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;→ 請雙擊 <strong>「啟動查詢系統.bat」</strong> 用 Python server 開啟以取得完整功能。
+  </div>
+
+  <!-- Loading -->
+  <div id="loadingDiv" class="loading hidden">
+    <div class="spinner"></div>
+    <div id="loadingMsg" style="font-size:14px">資料載入中…</div>
+  </div>
+
+  <!-- Error -->
+  <div id="errorDiv" class="error-box hidden"></div>
+
+  <!-- Results -->
+  <div id="resultsDiv" class="hidden">
+
+    <!-- Stock header -->
+    <div class="stock-header">
+      <div class="stkh-left">
+        <h2 id="stkName">--</h2>
+        <div class="stkh-code" id="stkCode">--</div>
+        <div class="badges">
+          <span id="badgeMain" class="badge badge-normal">✅ 一般股票</span>
+          <span id="badgeDisposal" class="badge badge-disposal hidden">🚨 處置中</span>
+        </div>
+      </div>
+      <div class="stkh-right">
+        <div class="close-price" id="closePrice">--</div>
+        <div class="price-chg" id="priceChg">--</div>
+        <div class="trade-date" id="tradeDate">--</div>
+      </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <div class="grid4">
+      <!-- 6日漲跌幅 -->
+      <div class="card">
+        <div class="card-label">📊 最近6日累積漲跌幅</div>
+        <div class="card-value" id="ret6d">--</div>
+        <div class="pbar-wrap">
+          <div class="pbar-container">
+            <div class="pbar-track">
+              <div class="pbar-fill" id="retFill" style="width:0"></div>
+            </div>
+          </div>
+          <div class="pbar-labels">
+            <span>0%</span><span>25% 門檻</span><span>32% 門檻</span>
+          </div>
+        </div>
+        <div class="card-sub" id="ret6dSub" style="margin-top:8px">--</div>
+      </div>
+
+      <!-- 成交量比 -->
+      <div class="card">
+        <div class="card-label">📦 今日量 vs 60日均量</div>
+        <div class="card-value" id="volRatio">--</div>
+        <div class="pbar-wrap">
+          <div class="pbar-track">
+            <div class="pbar-fill" id="volFill" style="width:0;background:var(--blue)"></div>
+          </div>
+          <div class="pbar-labels">
+            <span>0</span><span>5倍（門檻）</span><span>10倍</span>
+          </div>
+        </div>
+        <div class="card-sub" id="volSub" style="margin-top:8px">--</div>
+      </div>
+
+      <!-- 注意次數 -->
+      <div class="card">
+        <div class="card-label">⚠️ 注意股歷史記錄</div>
+        <div class="card-value" id="noticeCnt">-- 次</div>
+        <div class="card-sub" id="noticeSub">--</div>
+      </div>
+
+      <!-- 處置倒數 -->
+      <div class="card">
+        <div class="card-label">🚨 最快處置路線剩餘</div>
+        <div class="card-value" id="cdText">--</div>
+        <div class="card-sub" id="cdSub">--</div>
+      </div>
+    </div>
+
+    <!-- Price Chart -->
+    <div class="chart-card">
+      <div class="card-title">📈 近30日K線走勢 &amp; 成交量</div>
+      <div id="priceChart" style="height:320px;border-radius:6px;overflow:hidden;position:relative;"></div>
+    </div>
+
+    <!-- Tomorrow's Trigger Calculator -->
+    <div class="threshold-card">
+      <div class="threshold-title">🎯 明日觸發注意股條件計算（以今日為基礎推估）</div>
+      <div class="thr-grid">
+        <div class="thr-item">
+          <div class="thr-lbl">第1款 A — 觸發 6日漲幅 ≥ 25%</div>
+          <div class="thr-val" id="thr25" style="color:var(--orange)">NT$ --</div>
+          <div class="thr-note">明日收盤 ≥ 此價<br>（且須比大盤多漲20%）</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第1款 B — 觸發 6日漲幅 ≥ 32%（更嚴格）</div>
+          <div class="thr-val" id="thr32" style="color:var(--red)">NT$ --</div>
+          <div class="thr-note">明日收盤 ≥ 此價<br>（且須比大盤多漲20%）</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">安全線 — 不觸發第1款（漲幅 &lt; 25%）</div>
+          <div class="thr-val" id="thrSafe" style="color:var(--green)">NT$ --</div>
+          <div class="thr-note">明日收盤 &lt; 此價<br>第1款漲幅條件不達門檻</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第3款 — 成交量觸發（60日均量 × 5倍）</div>
+          <div class="thr-val" id="thrVol" style="color:var(--yellow)">-- 張</div>
+          <div class="thr-note">成交量 ≥ 此值<br>且6日漲幅同時 ≥ 25% 觸發</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">第4款 — 週轉率觸發門檻</div>
+          <div class="thr-val" style="color:var(--purple)">≥ 10%</div>
+          <div class="thr-note">當日週轉率 ≥ 10%<br>且6日漲幅同時 ≥ 25% 觸發</div>
+        </div>
+        <div class="thr-item">
+          <div class="thr-lbl">今日6日起迄價差</div>
+          <div class="thr-val" id="priceDiff" style="color:var(--blue)">NT$ --</div>
+          <div class="thr-note">起迄 ≥ NT$50 為注意股<br>第1款附加條件之一</div>
+        </div>
+      </div>
+
+      <!-- 漲跌停板資訊 -->
+      <div style="
+        margin-top:14px; padding:14px 16px;
+        background:var(--surface2); border-radius:8px;
+        display:flex; flex-wrap:wrap; gap:16px; align-items:center;
+        font-size:13px;
+      ">
+        <span style="color:var(--muted); font-weight:600;">📌 台股每日漲跌停限制（±10%）</span>
+        <span>明日漲停板：<strong id="upLimit" style="color:var(--red)">--</strong></span>
+        <span>明日跌停板：<strong id="dnLimit" style="color:var(--green)">--</strong></span>
+        <span id="thr25Reach" style="padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600;"></span>
+        <span id="thr32Reach" style="padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600;"></span>
+      </div>
+    </div>
+
+    <!-- Disposal Routes Card -->
+    <div id="routesCard" class="routes-card routes-safe">
+      <div class="routes-title">🚨 處置股觸發路線分析（四條路線任一達標即觸發）</div>
+      <div class="routes-grid">
+        <div class="route-item">
+          <div class="route-lbl">路線① 連續3日（第1款）</div>
+          <div class="route-val" id="r1val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r1fill" style="width:0"></div></div>
+          <div class="route-detail" id="r1det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線② 連續5日（第1~8款）</div>
+          <div class="route-val" id="r2val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r2fill" style="width:0"></div></div>
+          <div class="route-detail" id="r2det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線③ 近10日內6次（第1~8款）</div>
+          <div class="route-val" id="r3val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r3fill" style="width:0"></div></div>
+          <div class="route-detail" id="r3det">--</div>
+        </div>
+        <div class="route-item">
+          <div class="route-lbl">路線④ 近30日內12次（第1~8款）</div>
+          <div class="route-val" id="r4val">--</div>
+          <div class="route-track"><div class="route-fill rf-green" id="r4fill" style="width:0"></div></div>
+          <div class="route-detail" id="r4det">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Disposal Info -->
+    <div id="activeDisposalCard" class="disposal-active-card hidden">
+      <div class="disposal-active-title">🚨 目前處置中 — 詳細資訊</div>
+      <div class="disposal-info-grid">
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">公布日期</div>
+          <div class="dinfo-val" id="dAnnDate">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">處置原因</div>
+          <div class="dinfo-val" id="dReason">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">處置起迄</div>
+          <div class="dinfo-val" id="dPeriod">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">措施類型</div>
+          <div class="dinfo-val" id="dMeasure">--</div>
+        </div>
+        <div class="dinfo-item">
+          <div class="dinfo-lbl">剩餘天數</div>
+          <div class="dinfo-val" id="dRemain">--</div>
+        </div>
+      </div>
+      <div class="disposal-content" id="dContent">--</div>
+    </div>
+
+    <!-- Notice History Table -->
+    <div class="history-card">
+      <div class="card-title">📋 近30日注意股記錄（共 <span id="histCnt">0</span> 筆）</div>
+      <div id="histTableWrap">
+        <div style="padding:20px 0; text-align:center; color:var(--muted)">查詢中…</div>
+      </div>
+    </div>
+
+  </div><!-- /resultsDiv -->
+
+    </div><!-- /main-content -->
+  </div><!-- /page-layout -->
+
+</div><!-- /container -->
+
+  <script src="/static/js/main.js?v={{ js_v }}"></script>
+</body>
+</html>

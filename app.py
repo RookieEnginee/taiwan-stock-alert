@@ -6,17 +6,27 @@
 """
 
 import os
+import hashlib
 import sqlite3
 import requests
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, send_from_directory, request, Response, jsonify
+from flask import Flask, make_response, render_template, request, Response, jsonify
 from cloud_db import open_db, using_turso
 
-app = Flask(__name__, static_folder='.')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, static_folder='static', template_folder='templates')
+
+def _file_hash(rel_path):
+    """回傳靜態檔案內容的 MD5 前8碼，供 cache busting 使用"""
+    try:
+        with open(os.path.join(BASE_DIR, rel_path), 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()[:8]
+    except Exception:
+        return '0'
 
 # ── SQLite 快取資料庫 ─────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache.db')
+DB_PATH = os.path.join(BASE_DIR, 'cache.db')
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -89,7 +99,15 @@ def handle_404(e):
 # ── 靜態頁面 ─────────────────────────────────────────
 @app.route('/')
 def index():
-    return send_from_directory('.', '注意股處置股查詢系統.html')
+    resp = make_response(render_template(
+        'index.html',
+        css_v=_file_hash('static/css/style.css'),
+        js_v =_file_hash('static/js/main.js'),
+    ))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma']  = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 # ── TWSE 代理 ─────────────────────────────────────────
@@ -203,7 +221,7 @@ def tpex_stocklist():
 # ── 股市資料庫 API（stock_data.db）─────────────────────
 # ══════════════════════════════════════════════════════
 
-STOCK_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stock_data.db')
+STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
 
 def get_stock_db():
     # Turso cloud DB 優先；否則用本機 stock_data.db
