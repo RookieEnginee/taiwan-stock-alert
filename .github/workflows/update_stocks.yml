@@ -3,10 +3,14 @@ on:
   schedule:
     - cron: '30 6 * * 1-5'
     - cron: '30 12 * * 1-5'
+    - cron: '0 14 * * 1-5'
   workflow_dispatch:
 jobs:
   update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -25,3 +29,8 @@ jobs:
           else
             python stock_db.py
           fi
+      - name: Keepalive (prevent 60-day auto-disable)
+        if: github.event_name == 'schedule'
+        run: gh api -X PUT repos/${{ github.repository }}/actions/workflows/update_stocks.yml/enable
+        env:
+          GH_TOKEN: ${{ github.token }}
