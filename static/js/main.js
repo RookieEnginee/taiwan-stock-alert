@@ -374,7 +374,7 @@ async function getDailyData(code) {
 
 async function getNoticeHistory(code) {
   const today = new Date();
-  const start = new Date(today); start.setDate(start.getDate() - 30);
+  const start = new Date(today); start.setDate(start.getDate() - 42);
   const url = apiUrl(
     '/proxy/notice',
     '/announcement/notice',
@@ -801,10 +801,11 @@ function renderUI(code, stockName, m) {
     setStyle('cdText', 'color', 'var(--red)');
     set('cdSub', `依 ${currentMarket === 'OTC' ? 'TPEx' : 'TWSE'} 公告已達觸發門檻，次日起執行處置`);
   } else {
-    set('cdText', `還差 ${m.minNeed} 天`);
-    setStyle('cdText', 'color', routeColor(m.minNeed));
     const routeNames = { r1:m.r1need, r2:m.r2need, r3:m.r3need, r4:m.r4need };
     const minRoute = Object.entries(routeNames).reduce((a,b) => b[1] < a[1] ? b : a);
+    const unit = (minRoute[0] === 'r1' || minRoute[0] === 'r2') ? '天' : '次';
+    set('cdText', `還差 ${m.minNeed} ${unit}`);
+    setStyle('cdText', 'color', routeColor(m.minNeed));
     const rNameMap = { r1:'路線①連續3日', r2:'路線②連續5日', r3:'路線③10日內6次', r4:'路線④30日內12次' };
     const sub = m.minNeed === 1
       ? `最快路線：${rNameMap[minRoute[0]]}（若今日被列入注意股即觸發）`
@@ -1431,7 +1432,7 @@ async function getDbPrices(code, market) {
 async function getDbNoticeRows(code, market) {
   if (IS_FILE) return null;
   try {
-    const r = await fetch(`/db/notices?code=${encodeURIComponent(code)}&market=${market}&days=30`,
+    const r = await fetch(`/db/notices?code=${encodeURIComponent(code)}&market=${market}&days=42`,
                           { cache: 'no-cache' });
     if (!r.ok) return null;
     const arr = await r.json();

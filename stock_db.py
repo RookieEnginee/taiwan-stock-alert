@@ -225,7 +225,7 @@ def official_pct(close, change):
 # TSE（上市）資料抓取
 # ═══════════════════════════════════════════════
 
-def fetch_tse_notice(days=30):
+def fetch_tse_notice(days=45):
     """抓取 TWSE 全市場注意股記錄（近 days 天，單次 API）
     回傳格式：[編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
     """
@@ -351,7 +351,7 @@ def fetch_tse_month_prices(code, year, month):
 # OTC（上櫃）資料抓取
 # ═══════════════════════════════════════════════
 
-def fetch_otc_notice(days=30):
+def fetch_otc_notice(days=45):
     """
     抓取 TPEx 注意股記錄（支援日期範圍，近 days 天）
     URL: /www/zh-tw/bulletin/attention?startDate=YYYY/MM/DD&endDate=YYYY/MM/DD&response=json
@@ -666,7 +666,7 @@ def update_all(verbose=True):
     # ── Step 1：TSE 注意股（全市場，近30日，單次 API）─────
     log('\n[1/6] TSE 注意股（TWSE，全市場近30日）...')
     tse_n_stocks, tse_n_rows = [], []
-    for row in fetch_tse_notice(days=30):
+    for row in fetch_tse_notice(days=45):
         # row: [編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
         if len(row) < 6:
             continue
@@ -745,7 +745,7 @@ def update_all(verbose=True):
     # ── Step 3：OTC 注意股 ─────────────────────
     log('\n[3/6] OTC 注意股（TPEx，近30日）...')
     otc_n_stocks, otc_n_rows = [], []
-    for row in fetch_otc_notice(days=30):
+    for row in fetch_otc_notice(days=45):
         # row: [序號, 代號, 名稱, 累計, 原因, 發生日"115/05/29", 收盤, 本益比, link]
         if len(row) < 7:
             continue
@@ -1089,7 +1089,7 @@ if __name__ == '__main__':
         # TSE 注意股
         print('\n[TSE] 注意股（近30日）...')
         tse_n_stocks, tse_n_rows = [], []
-        for row in fetch_tse_notice(days=30):
+        for row in fetch_tse_notice(days=45):
             if len(row) < 6:
                 continue
             code = str(row[1]).strip()
@@ -1202,7 +1202,7 @@ if __name__ == '__main__':
         # OTC 注意股
         print('\n[OTC] 注意股（近30日）...')
         otc_n_stocks, otc_n_rows = [], []
-        for row in fetch_otc_notice(days=30):
+        for row in fetch_otc_notice(days=45):
             if len(row) < 7:
                 continue
             code = str(row[1]).strip()
