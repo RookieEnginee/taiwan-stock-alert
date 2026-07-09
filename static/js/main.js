@@ -892,6 +892,9 @@ function renderUI(code, stockName, m) {
 
   // ── History table ──
   renderHistory(m.noticeRows);
+
+  // ── 個股彈幕（每檔股票獨立） ──
+  initDanmaku(code, currentMarket);
 }
 
 function renderRoutes(m) {
@@ -988,9 +991,6 @@ function renderRoutes(m) {
   }
   renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10,              m.noticeDatesForRoutes), false);
   renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6), m.noticeDatesForRoutes), false);
-
-  // ── 個股彈幕（每檔股票獨立） ──
-  initDanmaku(code, currentMarket);
 }
 
 function renderChart(data) {
