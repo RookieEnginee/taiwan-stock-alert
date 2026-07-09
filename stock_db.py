@@ -22,6 +22,7 @@
 import os
 import sys
 import time
+import math
 import warnings
 import requests
 import urllib3
@@ -82,6 +83,7 @@ def init_db():
             close   REAL,
             volume  INTEGER,
             change  REAL,   -- 漲跌額
+            pct     REAL,   -- 官方單日漲跌幅%（change/(close-change)，無條件捨去至小數2位）
             PRIMARY KEY (code, market, date)
         );
         CREATE INDEX IF NOT EXISTS idx_price_date   ON daily_price(date);
@@ -129,6 +131,11 @@ def init_db():
             created_at TEXT    NOT NULL
         );
     ''')
+    # 舊資料庫遷移：daily_price 補 pct 欄位（已存在則略過）
+    try:
+        conn.execute('ALTER TABLE daily_price ADD COLUMN pct REAL')
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     if using_turso():
@@ -194,6 +201,26 @@ def safe_int(s, default=0):
         return default
 
 
+def official_pct(close, change):
+    """
+    官方單日漲跌幅%：change / (close - change) × 100
+    分母 (close - change) 即當日官方參考價（除權息日已調整），
+    結果依官方慣例「無條件捨去」至小數第 2 位（非四捨五入）。
+    無法計算時回傳 None。
+    """
+    try:
+        close  = float(close)
+        change = float(change)
+        ref = close - change
+        if close <= 0 or ref <= 0:
+            return None
+        pct = change / ref * 100.0
+        # 先四捨五入至小數6位消除浮點誤差，再無條件捨去至小數2位
+        return math.trunc(round(pct * 1e6) / 1e4) / 100.0
+    except Exception:
+        return None
+
+
 # ═══════════════════════════════════════════════
 # TSE（上市）資料抓取
 # ═══════════════════════════════════════════════
@@ -203,7 +230,7 @@ def fetch_tse_notice(days=30):
     回傳格式：[編號, 代號, 名稱, 累計次數, 注意資訊, 日期"115/05/28", 收盤, 本益比]
     """
     today = datetime.now()
-    end   = today - timedelta(days=1)
+    end   = today   # 含當日：TWSE 盤後即公布注意名單，晚間排程可取得（原本 -1 天導致當日名單隔日才入庫）
     start = today - timedelta(days=days)
     try:
         r = requests.get(
@@ -231,7 +258,7 @@ def fetch_tse_notice_for_codes(codes, days=65):
     回傳格式：[序號, 代碼, 名稱, 累計, 原因, 日期, 收盤, PE]
     """
     today = datetime.now()
-    end   = today - timedelta(days=1)
+    end   = today   # 含當日
     start = today - timedelta(days=days)
     all_rows = []
     for code in sorted(codes):
@@ -299,14 +326,20 @@ def fetch_tse_month_prices(code, year, month):
             date = roc_slash_to_iso(row[0])
             if not date:
                 continue
+            # 漲跌欄可能為 "X0.00"（除權息日不比較）→ change=0、pct 不計
+            chg_raw = str(row[7]).strip()
+            is_x    = chg_raw.upper().startswith('X')
+            close_v = safe_float(row[6])
+            chg_v   = 0.0 if is_x else safe_float(chg_raw)
             rows.append({
                 'date':   date,
                 'open':   safe_float(row[3]),
                 'high':   safe_float(row[4]),
                 'low':    safe_float(row[5]),
-                'close':  safe_float(row[6]),
+                'close':  close_v,
                 'volume': safe_int(row[1]),
-                'change': safe_float(row[7]),
+                'change': chg_v,
+                'pct':    None if is_x else official_pct(close_v, chg_v),
             })
         return rows
     except Exception as e:
@@ -397,11 +430,14 @@ def fetch_otc_daily_all(iso_date):
             code = str(row[0]).strip()
             if not (len(code) == 4 and code.isdigit()):
                 continue
+            close_v = safe_float(row[2])
+            chg_v   = safe_float(row[3])
             result[code] = {
                 'name':   str(row[1]).strip(),
                 'date':   iso_date,
-                'close':  safe_float(row[2]),
-                'change': safe_float(row[3]),
+                'close':  close_v,
+                'change': chg_v,
+                'pct':    official_pct(close_v, chg_v),
                 'open':   safe_float(row[4]),
                 'high':   safe_float(row[5]),
                 'low':    safe_float(row[6]),
@@ -458,15 +494,17 @@ def fetch_tse_daily_all(iso_date):
             else:
                 sign = 0
             chg = safe_float(str(row[10]).replace(',', '')) * sign
+            close_v = safe_float(str(row[8]).replace(',', ''))
             result[code] = {
                 'name':   str(row[1]).strip(),
                 'date':   iso_date,
                 'open':   safe_float(str(row[5]).replace(',', '')),
                 'high':   safe_float(str(row[6]).replace(',', '')),
                 'low':    safe_float(str(row[7]).replace(',', '')),
-                'close':  safe_float(str(row[8]).replace(',', '')),
+                'close':  close_v,
                 'volume': safe_int(str(row[2]).replace(',', '')) // 1000,  # 股→張
                 'change': chg,
+                'pct':    official_pct(close_v, chg),
             }
         return result
     except Exception as e:
@@ -540,7 +578,8 @@ def bulk_insert_prices(conn, market_data, market):
     all_rows = [
         (code, market,
          r['date'], r['open'], r['high'], r['low'],
-         r['close'], r['volume'], r.get('change', 0.0))
+         r['close'], r['volume'], r.get('change', 0.0),
+         r.get('pct', official_pct(r.get('close', 0), r.get('change', 0.0))))
         for code, rows in market_data.items()
         for r in rows
         if r.get('close', 0) > 0  # 過濾無效資料
@@ -549,7 +588,7 @@ def bulk_insert_prices(conn, market_data, market):
         return 0
     conn.executemany(
         'INSERT OR REPLACE INTO daily_price '
-        '(code,market,date,open,high,low,close,volume,change) VALUES (?,?,?,?,?,?,?,?,?)',
+        '(code,market,date,open,high,low,close,volume,change,pct) VALUES (?,?,?,?,?,?,?,?,?,?)',
         all_rows
     )
     return len(all_rows)
@@ -561,15 +600,36 @@ def insert_prices(conn, code, market, rows):
     data = [
         (code, market,
          r['date'], r['open'], r['high'], r['low'],
-         r['close'], r['volume'], r.get('change', 0.0))
+         r['close'], r['volume'], r.get('change', 0.0),
+         r.get('pct', official_pct(r.get('close', 0), r.get('change', 0.0))))
         for r in rows
     ]
     conn.executemany(
         'INSERT OR REPLACE INTO daily_price '
-        '(code,market,date,open,high,low,close,volume,change) VALUES (?,?,?,?,?,?,?,?,?)',
+        '(code,market,date,open,high,low,close,volume,change,pct) VALUES (?,?,?,?,?,?,?,?,?,?)',
         data
     )
     return len(data)
+
+
+def backfill_pct(conn):
+    """
+    補算既有資料的 pct（只處理 pct IS NULL 的列，單次 SQL）。
+    CAST(x AS INTEGER) 為朝零截斷 = 無條件捨去；
+    ±0.0001 epsilon 消除浮點表示誤差（等同 Python 先 round 至 6 位再捨去）。
+    """
+    try:
+        cur = conn.execute(
+            'UPDATE daily_price SET pct = '
+            '  CAST(change * 10000.0 / (close - change) '
+            '       + (CASE WHEN change >= 0 THEN 0.0001 ELSE -0.0001 END) '
+            '       AS INTEGER) / 100.0 '
+            'WHERE pct IS NULL AND close > 0 AND (close - change) > 0'
+        )
+        return getattr(cur, 'rowcount', 0)
+    except Exception as e:
+        print(f'  [backfill_pct] 失敗: {e}')
+        return 0
 
 
 def cleanup(conn, keep_days=None):
@@ -792,6 +852,12 @@ def update_all(verbose=True):
     conn.commit()
     log(f'\n[6/6] → OTC 共 {stats["otc_price"]} 筆')
 
+    # 舊資料補算官方 pct（僅 pct IS NULL 的列）
+    bf = backfill_pct(conn)
+    conn.commit()
+    if bf:
+        log(f'  補算既有資料 pct：{bf} 筆')
+
     # ── 清理舊資料 ────────────────────────────
     dp, dn = cleanup(conn)
     conn.commit()
@@ -860,6 +926,11 @@ def update_prices_only(verbose=True):
     otc_price = bulk_insert_prices(conn, otc_all, 'OTC')
     conn.commit()
     log(f'  → OTC 共 {otc_price} 筆')
+
+    bf = backfill_pct(conn)
+    conn.commit()
+    if bf:
+        log(f'  補算既有資料 pct：{bf} 筆')
 
     dp, dn = cleanup(conn)
     conn.commit()
@@ -1111,10 +1182,11 @@ if __name__ == '__main__':
         # 快速測試：插入一筆假股價，驗證 executemany 是否正常
         init_db()
         conn = get_db()
-        test_rows = [('2330', 'TSE', '2026-05-29', 980.0, 995.0, 975.0, 985.0, 50000, 5.0)]
+        test_rows = [('2330', 'TSE', '2026-05-29', 980.0, 995.0, 975.0, 985.0, 50000, 5.0,
+                      official_pct(985.0, 5.0))]
         conn.executemany(
             'INSERT OR REPLACE INTO daily_price '
-            '(code,market,date,open,high,low,close,volume,change) VALUES (?,?,?,?,?,?,?,?,?)',
+            '(code,market,date,open,high,low,close,volume,change,pct) VALUES (?,?,?,?,?,?,?,?,?,?)',
             test_rows
         )
         conn.commit()
@@ -1151,6 +1223,7 @@ if __name__ == '__main__':
             conn.executemany('INSERT OR REPLACE INTO notice_stocks (code,name,market,date,reason,close) VALUES (?,?,?,?,?,?)', otc_n_rows)
         conn.commit()
         print(f'  → {len(otc_n_rows)} 筆，{len(otc_codes)} 支股票')
+
 
         # OTC 處置股
         print('\n[OTC] 處置股...')

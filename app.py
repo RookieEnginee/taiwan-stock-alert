@@ -341,7 +341,7 @@ def db_prices():
         return jsonify({'error': '資料庫尚未建立'}), 404
     try:
         rows = conn.execute(
-            '''SELECT date, open, high, low, close, volume, change
+            '''SELECT date, open, high, low, close, volume, change, pct
                FROM daily_price
                WHERE code=? AND market=?
                ORDER BY date

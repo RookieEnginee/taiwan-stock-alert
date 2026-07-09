@@ -467,9 +467,42 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   const last30 = dailyData.slice(-30);
   const last60 = dailyData.slice(Math.max(0, dailyData.length - 60));
 
-  // ── 6-day return ──
-  const base6  = last6[0];
-  const ret6d  = (last.close / base6.close - 1) * 100;
+  // ── 6-day return（官方算法）──
+  // 累積漲跌幅 = 最近 6 個營業日「單日漲跌幅」之和，
+  // 每段先「無條件捨去」至小數第 2 位再加總（非四捨五入、非複利）。
+  // 單日漲跌幅優先用官方漲跌額：chg / (close − chg) × 100，
+  // 分母即官方參考價（除權息日已調整）；無漲跌額資料才退回前日收盤相除。
+  const trunc2 = (pct) => Math.trunc(Math.round(pct * 1e6) / 1e4) / 100; // 先消浮點誤差再捨去
+  const parseChg = (d) => {
+    if (typeof d.chg === 'number' && isFinite(d.chg)) return d.chg;   // DB 路徑
+    if (typeof d.chgStr === 'string' && d.chgStr) {                   // TWSE 直連路徑
+      const s = d.chgStr.trim();
+      if (/^X/i.test(s)) return 0;                 // "X0.00" 除權息日不比較 → 0
+      const v = parseFloat(s.replace(/[+,]/g, ''));
+      if (isFinite(v)) return v;
+    }
+    return null;
+  };
+  const dayPct = (d, prev) => {
+    // ① DB 已存官方 pct（ingestion 時由官方漲跌額算好、捨去 2 位）→ 直接用
+    if (typeof d.pct === 'number' && isFinite(d.pct)) return d.pct;
+    // ② 由官方漲跌額換算
+    const chg = parseChg(d);
+    if (chg !== null && d.close - chg > 0) {
+      return trunc2(chg / (d.close - chg) * 100);
+    }
+    // ③ fallback：前一日收盤相除
+    return (prev && prev.close > 0)
+      ? trunc2((d.close / prev.close - 1) * 100)
+      : 0;
+  };
+  const win7  = dailyData.slice(-7);      // 最多 7 筆收盤 → 6 段單日漲跌幅
+  const base6 = win7[0];
+  let ret6d = 0;
+  for (let i = 1; i < win7.length; i++) {
+    ret6d += dayPct(win7[i], win7[i - 1]);
+  }
+  ret6d = Math.round(ret6d * 100) / 100;  // 消除加總浮點殘差
   const diff6d = last.close - base6.close; // price difference (NT$)
 
   // ── Volume ──
@@ -477,14 +510,19 @@ function analyse(code, dailyData, noticeRows, disposalList) {
   const volRatio = last.vol / avgVol60;
 
   // ── Tomorrow's trigger prices ──
-  // Tomorrow's 6-day window: [D-4, D-3, D-2, D-1, D0, D+1]
-  // Base (start of tomorrow's window) = D-4 = dailyData[length-5]
-  const base_tmr = dailyData.length >= 5 ? dailyData[dailyData.length - 5] : null;
-  // 觸發門檻對齊合法 tick（取 ceil，讓用戶知道「至少要到這個價」）
+  // 明日的 6 日窗口 = 今日資料的最後 5 段漲跌幅 + 明日 1 段（基準價 = 今日收盤）
+  // 先算已知 5 段（各段捨去至 2 位）之和 s5，明日需再漲 (25 - s5)% 才觸發
   let thr25 = null, thr32 = null, thrSafe = null;
-  if (base_tmr) {
-    thr25   = tickCeil(base_tmr.close * 1.25);
-    thr32   = tickCeil(base_tmr.close * 1.32);
+  if (dailyData.length >= 6) {
+    const w6 = dailyData.slice(-6);       // 6 筆收盤 → 5 段
+    let s5 = 0;
+    for (let i = 1; i < w6.length; i++) {
+      s5 += dayPct(w6[i], w6[i - 1]);
+    }
+    s5 = Math.round(s5 * 100) / 100;
+    // 觸發門檻對齊合法 tick（取 ceil，讓用戶知道「至少要到這個價」）
+    thr25   = tickCeil(last.close * (1 + (25 - s5) / 100));
+    thr32   = tickCeil(last.close * (1 + (32 - s5) / 100));
     thrSafe = parseFloat((thr25 - getTickSize(thr25)).toFixed(2)); // 剛好低一個 tick
   }
   const thrVol   = avgVol60 * 5; // Clause 3 volume trigger
@@ -1378,6 +1416,7 @@ async function getDbPrices(code, market) {
         low:    item.low   || 0,
         close:  item.close || 0,
         chg:    chgVal,
+        pct:    (typeof item.pct === 'number' && isFinite(item.pct)) ? item.pct : null,
         chgStr: chgVal >= 0 ? `+${nf(chgVal)}` : nf(chgVal),
         trades: 0,
       };
