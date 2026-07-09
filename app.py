@@ -6,6 +6,7 @@
 """
 
 import os
+import re
 import hashlib
 from dotenv import load_dotenv
 load_dotenv()
@@ -120,6 +121,16 @@ def ads_txt():
 @app.route('/about')
 def about():
     return render_template('about.html')
+
+
+@app.route('/guide')
+def guide():
+    return render_template('guide.html')
+
+
+@app.route('/faq')
+def faq():
+    return render_template('faq.html')
 
 
 @app.route('/privacy')
@@ -667,16 +678,43 @@ def db_approaching_disposal():
         conn.close()
 
 
+_comments_migrated = False
+
+def ensure_comments_schema(conn):
+    """舊 DB 補 comments.code / market 欄位（每個 worker 只跑一次）"""
+    global _comments_migrated
+    if _comments_migrated:
+        return
+    for _sql in ('ALTER TABLE comments ADD COLUMN code TEXT',
+                 'ALTER TABLE comments ADD COLUMN market TEXT',
+                 'ALTER TABLE comments ADD COLUMN color TEXT'):
+        try:
+            conn.execute(_sql)
+        except Exception:
+            pass
+    _comments_migrated = True
+
+
 @app.route('/api/comments', methods=['GET'])
 def get_comments():
+    code   = (request.args.get('code') or '').strip()
+    market = (request.args.get('market') or '').strip().upper()
     conn = get_stock_db()
     if not conn:
         return jsonify([]), 200
     try:
-        rows = conn.execute(
-            'SELECT id, nickname, content, created_at FROM comments '
-            'ORDER BY id DESC LIMIT 100'
-        ).fetchall()
+        ensure_comments_schema(conn)
+        if code:
+            rows = conn.execute(
+                'SELECT id, nickname, content, created_at, color FROM comments '
+                'WHERE code=? AND market=? ORDER BY id DESC LIMIT 100',
+                (code, market)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, nickname, content, created_at FROM comments "
+                "WHERE code IS NULL OR code='' ORDER BY id DESC LIMIT 100"
+            ).fetchall()
         resp = jsonify([dict(r) for r in rows])
         resp.headers['Access-Control-Allow-Origin'] = '*'
         return resp
@@ -689,10 +727,19 @@ def post_comment():
     data     = request.get_json(silent=True) or {}
     content  = (data.get('content') or '').strip()
     nickname = (data.get('nickname') or '匿名').strip()[:20]
+    code     = (data.get('code') or '').strip()[:6]
+    market   = (data.get('market') or '').strip().upper()
     if not content:
         return jsonify({'error': '留言內容不能為空'}), 400
     if len(content) > 100:
         return jsonify({'error': '留言最多 100 字'}), 400
+    if code and not code.isalnum():
+        return jsonify({'error': '股票代碼格式錯誤'}), 400
+    if market not in ('TSE', 'OTC'):
+        market = ''
+    color = (data.get('color') or '').strip()
+    if color and not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+        color = ''
 
     conn = get_stock_db()
     if not conn:
@@ -705,9 +752,12 @@ def post_comment():
         ).fetchone()[0]
         if count_today >= 500:
             return jsonify({'error': '今日留言已達上限（500則），明天再來吧！'}), 429
+        ensure_comments_schema(conn)
         conn.execute(
-            'INSERT INTO comments (nickname, content, created_at) VALUES (?, ?, ?)',
-            (nickname, content, datetime.utcnow().isoformat() + 'Z')
+            'INSERT INTO comments (nickname, content, created_at, code, market, color) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            (nickname, content, datetime.utcnow().isoformat() + 'Z',
+             code or None, market or None, color or None)
         )
         conn.commit()
         resp = jsonify({'ok': True})

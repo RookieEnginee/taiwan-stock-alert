@@ -47,6 +47,14 @@
         <span class="sidebar-icon">💬</span>
         <span>留言版</span>
       </div>
+      <div class="sidebar-item" onclick="location.href='/guide'">
+        <span class="sidebar-icon">📖</span>
+        <span>知識庫</span>
+      </div>
+      <div class="sidebar-item" onclick="location.href='/faq'">
+        <span class="sidebar-icon">❓</span>
+        <span>FAQ</span>
+      </div>
     </nav>
 
     <!-- 主內容 -->
@@ -148,6 +156,19 @@
 
   <!-- Results -->
   <div id="resultsDiv" class="hidden">
+
+    <!-- 個股彈幕層（覆蓋整個結果區） -->
+    <div id="danmakuLayer" class="danmaku-layer"></div>
+
+    <!-- 彈幕輸入列 -->
+    <div class="danmaku-bar">
+      <button id="dmkToggle" class="dmk-toggle" onclick="toggleDanmaku()" title="顯示/隱藏彈幕">彈幕：開</button>
+      <div class="dmk-colors" id="dmkColors" title="彈幕顏色"></div>
+      <input id="dmkInput" class="dmk-input" maxlength="50"
+             placeholder="發個彈幕聊聊這檔股票…（Enter 送出）"
+             onkeydown="if(event.key==='Enter')sendDanmaku()">
+      <button class="dmk-send" onclick="sendDanmaku()">發送</button>
+    </div>
 
     <!-- Stock header -->
     <div class="stock-header">
@@ -341,12 +362,38 @@
 
   </div><!-- /resultsDiv -->
 
+  <!-- 知識專區（靜態內容） -->
+  <div class="hot-section" style="margin-top:28px">
+    <div class="hot-section-header">
+      <span class="hot-section-title">📖 注意股・處置股 快速入門</span>
+    </div>
+    <div style="font-size:13.5px;color:#b0b8c4;line-height:2;padding:4px 2px">
+      <p style="margin-bottom:10px">
+        台股的警示制度分兩階段：股票價量異常時，交易所收盤後會先<strong style="color:#e6edf3">公布注意</strong>（注意股）；
+        異常持續累積達標（如連續 3 日因漲跌幅被注意、或 30 個營業日內累計 12 次），就會進入<strong style="color:#e6edf3">處置</strong>（處置股），
+        改為每 5～20 分鐘分盤撮合、大額委託需預收款券，流動性大幅下降。
+      </p>
+      <p style="margin-bottom:10px">
+        容易被忽略的是，官方「六日累積漲跌幅」的算法是<strong style="color:#e6edf3">逐日漲跌幅無條件捨去後加總</strong>，
+        並非期初期末的複利報酬——這正是許多人自行計算對不上公告數字的原因。本站的累積漲跌幅與「明日觸發價」試算皆採官方算法。
+      </p>
+      <p style="margin-bottom:4px">
+        👉 詳細規則解說：<a href="/guide" style="color:#388bfd">注意股與處置股完整教學</a>　·　
+        快速問答：<a href="/faq" style="color:#388bfd">常見問題 FAQ</a>
+      </p>
+    </div>
+  </div>
+
     </div><!-- /main-content -->
   </div><!-- /page-layout -->
 
 </div><!-- /container -->
 
 <footer style="text-align:center;padding:24px 0 16px;font-size:12px;color:#7d8590;">
+  <a href="/guide" style="color:#7d8590;text-decoration:none;" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#7d8590'">處置股教學</a>
+  <span style="margin:0 10px">·</span>
+  <a href="/faq" style="color:#7d8590;text-decoration:none;" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#7d8590'">FAQ</a>
+  <span style="margin:0 10px">·</span>
   <a href="/about" style="color:#7d8590;text-decoration:none;" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#7d8590'">關於本站</a>
   <span style="margin:0 10px">·</span>
   <a href="/privacy" style="color:#7d8590;text-decoration:none;" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#7d8590'">隱私權政策</a>

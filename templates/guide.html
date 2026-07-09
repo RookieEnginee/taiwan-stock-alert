@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="台股注意股與處置股完整教學：注意有價證券13款標準白話解說、累積漲跌幅官方計算方式、處置條件四條路線、分盤撮合與預收款券等處置措施，以及投資人實務注意事項。">
+  <title>注意股與處置股完整教學｜台股警示制度指南 — 台股注意股・處置股查詢系統</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background:#0d1117; color:#e6edf3;
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      padding:40px 20px; line-height:1.9;
+    }
+    .container { max-width:800px; margin:0 auto; }
+    h1 { font-size:24px; font-weight:700; margin-bottom:8px; }
+    h2 { font-size:17px; font-weight:600; color:#388bfd; margin:26px 0 10px; }
+    h3 { font-size:15px; font-weight:600; color:#e6edf3; margin:18px 0 8px; }
+    p  { font-size:14px; color:#b0b8c4; margin-bottom:10px; }
+    ul, ol { font-size:14px; color:#b0b8c4; margin:0 0 10px 22px; }
+    li { margin-bottom:6px; }
+    a  { color:#388bfd; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    strong { color:#e6edf3; }
+    .subtitle { font-size:14px; color:#7d8590; margin-bottom:32px; }
+    .back { display:inline-block; margin-bottom:28px; font-size:13px; color:#7d8590; }
+    .back:hover { color:#e6edf3; }
+    .card {
+      background:#161b22; border:1px solid #30363d;
+      border-radius:10px; padding:20px 24px; margin-bottom:16px;
+    }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin:10px 0; }
+    th, td { border:1px solid #30363d; padding:8px 10px; text-align:left; color:#b0b8c4; }
+    th { background:#21262d; color:#e6edf3; white-space:nowrap; }
+    .tip {
+      background:#0d2036; border:1px solid #1f6feb; border-radius:8px;
+      padding:12px 16px; font-size:13px; color:#b0cdf0; margin:12px 0;
+    }
+    .warn {
+      background:#2b1500; border:1px solid #d29922; border-radius:8px;
+      padding:12px 16px; font-size:13px; color:#f0c060; margin:12px 0;
+    }
+    .foot-note { font-size:12px; color:#7d8590; margin-top:24px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <a class="back" href="/">← 返回查詢系統</a>
+  <h1>注意股與處置股完整教學</h1>
+  <p class="subtitle">看懂台股警示制度：從被「注意」到被「處置」，規則、算法與實務影響一次搞懂</p>
+
+  <div class="card">
+    <h2>一、台股的市場監視制度在做什麼？</h2>
+    <p>台灣證券交易所（TWSE）與櫃買中心（TPEx）針對價格或成交量出現異常變化的股票，建立了一套兩階段的警示制度：第一階段是<strong>公布注意（注意股）</strong>，第二階段是<strong>處置（處置股）</strong>。</p>
+    <p>制度的核心邏輯是「先提醒、再降溫」。當一檔股票短期漲跌過大、成交過熱或籌碼過度集中，交易所會先把它列為注意股，公告週知；如果異常狀況持續發生、達到一定次數，就會進一步採取處置措施，用降低撮合速度、要求預收款券等方式，強制幫過熱的交易降溫。</p>
+    <p>對投資人而言，注意股是一個「風險升溫」的訊號，處置股則會實際改變你下單與交割的方式，兩者都值得在進場前先確認。</p>
+  </div>
+
+  <div class="card">
+    <h2>二、注意股：怎樣會被「公布注意」？</h2>
+    <p>交易所每個交易日收盤後，會依「公布注意交易資訊」的認定標準逐股檢核，符合任一款者即列入當日注意名單。上市與上櫃的條文各有十餘款、門檻數值略有差異，以下用白話整理最常見的幾款：</p>
+    <table>
+      <tr><th>款次</th><th>白話說明</th></tr>
+      <tr><td>第一款</td><td>最近六個營業日<strong>累積收盤價漲跌幅</strong>過大（上市約超過±25%，並搭配起迄價差、與同類指數乖離等配套條件）</td></tr>
+      <tr><td>第二款</td><td>拉長天期看漲幅：最近30、60、90個營業日起迄兩日收盤價漲幅過大（例如90日漲幅超過100%以上的等級）</td></tr>
+      <tr><td>第三款</td><td>累積漲跌幅偏高<strong>且成交量暴增</strong>（當日量較60日均量放大數倍）</td></tr>
+      <tr><td>第四款</td><td>累積漲跌幅偏高<strong>且週轉率過高</strong>（當日週轉率達一定百分比）</td></tr>
+      <tr><td>第五款</td><td>累積漲跌幅偏高且<strong>證券商受託買賣過度集中</strong>於少數券商或單一投資人</td></tr>
+      <tr><td>第六款</td><td><strong>本益比、股價淨值比異常</strong>（相對所屬產業倍數過高）且週轉率、集中度等條件同時成立</td></tr>
+      <tr><td>第九、十款</td><td>成交量或<strong>累積週轉率</strong>異常放大（六日累積週轉率達高水位）</td></tr>
+      <tr><td>第十一款</td><td>最近六個營業日起迄兩日的<strong>收盤價價差</strong>達一定金額（高價股常見）</td></tr>
+      <tr><td>第十二款</td><td><strong>借券賣出</strong>成交量占比過高且明顯放大</td></tr>
+      <tr><td>第十三款</td><td><strong>當日沖銷（當沖）比率過高</strong>：六日當沖占比約六成以上，且前一營業日當沖比率也偏高</td></tr>
+    </table>
+    <p class="foot-note">實際條文與門檻以 <a href="https://www.twse.com.tw/" target="_blank" rel="noopener">臺灣證券交易所</a>「公布或通知注意交易資訊暨處置作業要點」及 <a href="https://www.tpex.org.tw/" target="_blank" rel="noopener">櫃買中心</a> 對應規章為準，交易所會不定期修訂。</p>
+  </div>
+
+  <div class="card">
+    <h2>三、累積漲跌幅的官方算法（很多人算錯！）</h2>
+    <p>注意股第一款的「最近六個營業日累積收盤價漲跌百分比」，<strong>不是</strong>拿第六天收盤除以基準日收盤的複利報酬，而是：</p>
+    <ol>
+      <li>先算出這六個營業日<strong>每一天各自的漲跌幅</strong>（相對前一日參考價）</li>
+      <li>每一天的漲跌幅<strong>無條件捨去</strong>至小數點第二位（不是四捨五入）</li>
+      <li>把六天的數字<strong>直接相加</strong></li>
+    </ol>
+    <p>實例：富鼎（8261）2026/7/7 被公告「最近六個營業日累積收盤價漲幅達34.86%」。這六天的每日漲跌幅分別是 +9.95%、+9.98%、+9.91%、−2.14%、+10.00%、−2.84%，加總正好是 <strong>+34.86%</strong>。若用複利算會得到約 +39%，用四捨五入再加總會得到 34.88%，都對不上官方數字。</p>
+    <div class="tip">💡 本站個股頁的「最近6日累積漲跌幅」以及「明日觸發價」試算，採用的正是這套官方算法（逐日捨去後加總），並直接使用交易所公告的每日漲跌額換算，除權息日也能正確處理。</div>
+  </div>
+
+  <div class="card">
+    <h2>四、處置股：達到什麼條件會被處置？</h2>
+    <p>被列注意股本身還不會改變交易方式，但<strong>次數累積</strong>到門檻就會觸發處置。常見的四條觸發路線：</p>
+    <table>
+      <tr><th>路線</th><th>條件</th></tr>
+      <tr><td>路線①</td><td><strong>連續 3 個營業日</strong>因「第一款」（六日累積漲跌幅）被公布注意</td></tr>
+      <tr><td>路線②</td><td><strong>連續 5 個營業日</strong>被公布注意（任何款次皆算）</td></tr>
+      <tr><td>路線③</td><td>最近 <strong>10 個營業日內累計 6 次</strong>被公布注意</td></tr>
+      <tr><td>路線④</td><td>最近 <strong>30 個營業日內累計 12 次</strong>被公布注意</td></tr>
+    </table>
+    <p>另外，若股票在處置期間或處置結束後短期內再次達標，會觸發<strong>再次處置</strong>，措施更嚴格。本站個股頁的「四條路線進度條」就是即時追蹤這些條件還差幾天／幾次。</p>
+  </div>
+
+  <div class="card">
+    <h2>五、處置措施的內容：交易會變成怎樣？</h2>
+    <h3>第一次處置（通常 10 個營業日）</h3>
+    <ul>
+      <li><strong>人工管制之撮合終端機執行撮合</strong>：約每 5 分鐘撮合一次（一般股票為逐筆撮合），成交速度大幅下降</li>
+      <li>單筆委託數量達一定張數（例如 10 張）以上，或多筆累計達一定門檻，券商應先向投資人<strong>預收款券</strong></li>
+    </ul>
+    <h3>再次處置（更嚴格）</h3>
+    <ul>
+      <li>撮合間隔拉長到約每 <strong>20 分鐘</strong>一次</li>
+      <li><strong>全面預收款券</strong>：買進要先付全額現金、賣出要先交付股票，信用交易與當沖實質上被封鎖</li>
+    </ul>
+    <div class="warn">⚠️ 處置期間通常為 10 個營業日（遇除權息、停牌等情形可能順延），確切措施與期間以交易所每次公告內容為準。</div>
+  </div>
+
+  <div class="card">
+    <h2>六、處置對股價與投資人的實務影響</h2>
+    <ul>
+      <li><strong>流動性驟降</strong>：撮合間隔拉長後，掛單無法即時成交，價格跳動變大，停損停利都更難執行。</li>
+      <li><strong>當沖與隔日沖退場</strong>：預收款券使短線資金操作成本大增，原本靠當沖撐起的成交量往往迅速萎縮。</li>
+      <li><strong>題材熱度冷卻</strong>：處置常被市場解讀為「主管機關點名」，投機買盤縮手，急漲股進處置後回檔的案例並不少見；但也有基本面強勢的股票出關後續漲，不能一概而論。</li>
+      <li><strong>出關觀察</strong>：處置結束（俗稱「出關」）後交易恢復正常，本站首頁的「即將出關」清單可以幫你提前留意。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>七、投資人自保清單</h2>
+    <ol>
+      <li>進場前先查該股是否已在注意名單、離處置還差幾次（本站輸入代碼即可）。</li>
+      <li>持有中的股票若開始頻繁被列注意，先想好處置情境下的出場計畫——處置後想賣可能要排隊等撮合。</li>
+      <li>看到「即將處置」公告時，注意生效日：公告通常在前一晚發布、次一營業日起執行。</li>
+      <li>用融資或當沖操作熱門股時，特別留意再次處置的全面預收款券風險，避免交割違約。</li>
+      <li>官方認定以交易所盤後公告為準，任何試算（包含本站）都只是輔助參考。</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>八、延伸閱讀</h2>
+    <ul>
+      <li><a href="/faq">常見問題 FAQ</a> — 注意股／處置股的快速問答</li>
+      <li><a href="/about">關於本站</a> — 功能介紹與資料來源</li>
+      <li><a href="https://www.twse.com.tw/" target="_blank" rel="noopener">臺灣證券交易所</a>、<a href="https://www.tpex.org.tw/" target="_blank" rel="noopener">證券櫃檯買賣中心</a> — 官方注意／處置公告</li>
+    </ul>
+    <p class="foot-note">本頁內容為本站整理之教學說明，僅供參考，不構成投資建議；規則細節若與交易所現行公告不符，以官方為準。</p>
+  </div>
+</div>
+</body>
+</html>

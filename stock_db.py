@@ -123,19 +123,26 @@ def init_db():
             message    TEXT
         );
 
-        -- 留言版
+        -- 留言版（code/market 為 NULL = 全站留言；有值 = 個股彈幕）
         CREATE TABLE IF NOT EXISTS comments (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             nickname   TEXT    DEFAULT '匿名',
             content    TEXT    NOT NULL,
-            created_at TEXT    NOT NULL
+            created_at TEXT    NOT NULL,
+            code       TEXT,
+            market     TEXT,
+            color      TEXT
         );
     ''')
-    # 舊資料庫遷移：daily_price 補 pct 欄位（已存在則略過）
-    try:
-        conn.execute('ALTER TABLE daily_price ADD COLUMN pct REAL')
-    except Exception:
-        pass
+    # 舊資料庫遷移：daily_price 補 pct 欄位、comments 補 code/market（已存在則略過）
+    for _sql in ('ALTER TABLE daily_price ADD COLUMN pct REAL',
+                 'ALTER TABLE comments ADD COLUMN code TEXT',
+                 'ALTER TABLE comments ADD COLUMN market TEXT',
+                 'ALTER TABLE comments ADD COLUMN color TEXT'):
+        try:
+            conn.execute(_sql)
+        except Exception:
+            pass
     conn.commit()
     conn.close()
     if using_turso():

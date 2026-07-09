@@ -988,6 +988,9 @@ function renderRoutes(m) {
   }
   renderRoute('r3', m.cnt10,       6,  m.r3need, '次', fmtNoticeDates(m.cnt10,              m.noticeDatesForRoutes), false);
   renderRoute('r4', m.cnt30,       12, m.r4need, '次', fmtNoticeDates(Math.min(m.cnt30, 6), m.noticeDatesForRoutes), false);
+
+  // ── 個股彈幕（每檔股票獨立） ──
+  initDanmaku(code, currentMarket);
 }
 
 function renderChart(data) {
@@ -1267,6 +1270,128 @@ async function submitComment() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ═══════════════════════════════════════════════
+// 個股彈幕（每檔股票獨立，循環播放）
+// ═══════════════════════════════════════════════
+const DMK_COLORS = ['#ffffff', '#ff5b5b', '#ffa657', '#ffd93d', '#3fb950', '#58a6ff', '#d2a8ff', '#ff7bc6'];
+let dmk = { code: null, market: null, list: [], idx: 0, timer: null,
+            on: true, color: '#ffffff', lanes: [] };
+
+function dmkInitColorPicker() {
+  const box = $id('dmkColors');
+  if (!box || box.children.length) return;
+  DMK_COLORS.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'dmk-color' + (c === dmk.color ? ' active' : '');
+    b.style.background = c;
+    b.onclick = () => {
+      dmk.color = c;
+      box.querySelectorAll('.dmk-color').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    };
+    box.appendChild(b);
+  });
+}
+
+async function initDanmaku(code, market) {
+  dmkInitColorPicker();
+  stopDanmakuTimer();
+  const layer = $id('danmakuLayer');
+  if (layer) layer.innerHTML = '';
+  dmk.code = code; dmk.market = market; dmk.list = []; dmk.idx = 0; dmk.lanes = [];
+  if (IS_FILE) return;   // 無後端時停用
+  try {
+    const r = await fetch(`/api/comments?code=${encodeURIComponent(code)}&market=${market}`,
+                          { cache: 'no-cache' });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && dmk.code === code) dmk.list = arr.reverse(); // 舊→新
+    }
+  } catch (_) {}
+  startDanmakuLoop();
+}
+
+function startDanmakuLoop() {
+  if (dmk.timer || !dmk.on) return;
+  const tick = () => {
+    if (dmk.list.length > 0 && dmk.on) {
+      const c = dmk.list[dmk.idx % dmk.list.length];
+      dmk.idx++;
+      spawnDanmaku(c.content, c.color);
+    }
+    // 留言越多間隔越短；少留言時放慢避免同一句洗版
+    const gap = dmk.list.length >= 8 ? 1300
+              : dmk.list.length >= 3 ? 2600 : 5200;
+    dmk.timer = setTimeout(tick, gap + Math.random() * 1500);
+  };
+  dmk.timer = setTimeout(tick, 600);
+}
+
+function stopDanmakuTimer() {
+  if (dmk.timer) { clearTimeout(dmk.timer); dmk.timer = null; }
+}
+
+function toggleDanmaku() {
+  dmk.on = !dmk.on;
+  const btn = $id('dmkToggle');
+  btn.textContent = dmk.on ? '彈幕：開' : '彈幕：關';
+  btn.classList.toggle('off', !dmk.on);
+  if (dmk.on) {
+    startDanmakuLoop();
+  } else {
+    stopDanmakuTimer();
+    const layer = $id('danmakuLayer');
+    if (layer) layer.innerHTML = '';
+  }
+}
+
+function spawnDanmaku(text, color) {
+  const layer = $id('danmakuLayer');
+  if (!layer || !dmk.on || !text) return;
+  const el = document.createElement('div');
+  el.className = 'danmaku-item';
+  el.textContent = text;
+  el.style.color = color || '#ffffff';
+  layer.appendChild(el);
+
+  // 車道分配：取最久沒用的車道，避免重疊
+  const laneH  = 34;
+  const nLanes = Math.max(1, Math.floor(layer.clientHeight / laneH));
+  if (dmk.lanes.length !== nLanes) dmk.lanes = new Array(nLanes).fill(0);
+  let li = 0, oldest = Infinity;
+  for (let i = 0; i < nLanes; i++) {
+    if (dmk.lanes[i] < oldest) { oldest = dmk.lanes[i]; li = i; }
+  }
+  dmk.lanes[li] = Date.now();
+  el.style.top = (li * laneH + 4) + 'px';
+
+  const w  = el.offsetWidth;
+  const lw = layer.clientWidth;
+  const dur = Math.max(7000, Math.min(16000, (lw + w) * 11)); // 約 90px/s
+  const anim = el.animate(
+    [{ transform: `translateX(${lw}px)` }, { transform: `translateX(${-w}px)` }],
+    { duration: dur, easing: 'linear' }
+  );
+  anim.onfinish = () => el.remove();
+}
+
+async function sendDanmaku() {
+  const inp = $id('dmkInput');
+  const content = (inp.value || '').trim();
+  if (!content || !dmk.code) return;
+  inp.value = '';
+  spawnDanmaku(content, dmk.color);                  // 立即飄出
+  dmk.list.push({ content, color: dmk.color });      // 加入循環
+  try {
+    await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, nickname: '匿名',
+                             code: dmk.code, market: dmk.market, color: dmk.color }),
+    });
+  } catch (_) {}
 }
 
 async function loadHotStocks() {

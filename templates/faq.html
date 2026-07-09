@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="台股注意股、處置股常見問題：注意股和處置股差在哪？處置期間多久、還能交易嗎？分盤撮合與預收款券是什麼？累積漲跌幅怎麼算？資料多久更新？">
+  <title>常見問題 FAQ — 台股注意股・處置股查詢系統</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background:#0d1117; color:#e6edf3;
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      padding:40px 20px; line-height:1.9;
+    }
+    .container { max-width:800px; margin:0 auto; }
+    h1 { font-size:24px; font-weight:700; margin-bottom:8px; }
+    h2 { font-size:17px; font-weight:600; color:#388bfd; margin:26px 0 10px; }
+    h3 { font-size:15px; font-weight:600; color:#e6edf3; margin:18px 0 8px; }
+    p  { font-size:14px; color:#b0b8c4; margin-bottom:10px; }
+    ul, ol { font-size:14px; color:#b0b8c4; margin:0 0 10px 22px; }
+    li { margin-bottom:6px; }
+    a  { color:#388bfd; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    strong { color:#e6edf3; }
+    .subtitle { font-size:14px; color:#7d8590; margin-bottom:32px; }
+    .back { display:inline-block; margin-bottom:28px; font-size:13px; color:#7d8590; }
+    .back:hover { color:#e6edf3; }
+    .card {
+      background:#161b22; border:1px solid #30363d;
+      border-radius:10px; padding:20px 24px; margin-bottom:16px;
+    }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin:10px 0; }
+    th, td { border:1px solid #30363d; padding:8px 10px; text-align:left; color:#b0b8c4; }
+    th { background:#21262d; color:#e6edf3; white-space:nowrap; }
+    .tip {
+      background:#0d2036; border:1px solid #1f6feb; border-radius:8px;
+      padding:12px 16px; font-size:13px; color:#b0cdf0; margin:12px 0;
+    }
+    .warn {
+      background:#2b1500; border:1px solid #d29922; border-radius:8px;
+      padding:12px 16px; font-size:13px; color:#f0c060; margin:12px 0;
+    }
+    .foot-note { font-size:12px; color:#7d8590; margin-top:24px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <a class="back" href="/">← 返回查詢系統</a>
+  <h1>常見問題 FAQ</h1>
+  <p class="subtitle">關於注意股、處置股與本站功能的快速問答</p>
+
+  <div class="card">
+    <h2>Q1：注意股和處置股差在哪？</h2>
+    <p>「注意股」是交易所盤後公布的<strong>警示名單</strong>，提醒市場這檔股票價量異常，但交易方式完全不變。「處置股」則是異常狀況累積達標後的<strong>實質管制</strong>：撮合改為每 5 或 20 分鐘一次、大額委託甚至全面預收款券。簡單說：注意是黃牌，處置是紅牌。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q2：股票被列入注意股，代表公司出問題了嗎？</h2>
+    <p>不一定。注意股的認定標準是<strong>價格與成交量的統計異常</strong>（漲太快、量太大、當沖太多、本益比過高等），與公司基本面好壞無直接關係。強勢成長股在飆漲段被列注意很常見；但頻繁被列注意通常代表籌碼過熱，追高風險升高。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q3：處置期間多久？股票還能買賣嗎？</h2>
+    <p>一般為 <strong>10 個營業日</strong>（遇特殊情形可能順延），期間<strong>仍可正常買賣</strong>，只是撮合速度變慢（第一次處置約每 5 分鐘撮合一次；再次處置約每 20 分鐘），且達一定數量的委託需要預收款券。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q4：「預收款券」是什麼意思？還能當沖嗎？</h2>
+    <p>預收款券指下單<strong>前</strong>就要把買進的全額價金（或賣出的股票）交給券商，而不是 T+2 交割時才付。第一次處置通常只針對大額委託；再次處置則全面預收，此時資券與現股當沖實務上都做不了。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q5：連續幾次注意會變處置？</h2>
+    <p>常見四條路線：<strong>連續 3 日</strong>因第一款（六日累積漲跌幅）被注意、<strong>連續 5 日</strong>被注意（任何款）、<strong>10 個營業日內 6 次</strong>、<strong>30 個營業日內 12 次</strong>。本站個股頁會即時顯示四條路線各自的進度與還差幾天／幾次。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q6：六日累積漲跌幅為什麼跟我自己算的不一樣？</h2>
+    <p>官方算法是把六個營業日<strong>每天的漲跌幅各自無條件捨去到小數第二位後相加</strong>，不是期初期末的複利報酬。例如每天都漲停 10% 六天，官方累積是 60.00%（加總），不是複利的 77%。詳細說明與實例請看<a href="/guide">完整教學</a>第三節。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q7：處置股「出關」後會怎樣？</h2>
+    <p>處置期滿後交易方式恢復正常，俗稱出關。出關股的走勢沒有固定劇本：有的因流動性恢復而補漲，有的因熱度散去而回落。本站首頁「即將出關」清單會列出今天是最後一個處置日的股票，方便提前追蹤。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q8：本站資料多久更新一次？為什麼當天的注意名單晚上才看得到？</h2>
+    <p>交易所在<strong>每個交易日收盤後</strong>（約傍晚）才公布當日注意名單與處置公告，本站排程在台灣時間晚間自動抓取更新資料庫，因此當日名單通常在<strong>當天晚上</strong>入庫。股價資料同樣於收盤後更新。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q9：「明日觸發價」是怎麼算出來的？</h2>
+    <p>依官方的累積漲跌幅算法反推：把已知五個營業日的每日漲跌幅（各自捨去到小數兩位）加總，再算出明天需要多少漲幅才會讓六日累積超過 25%（或 32%）門檻，最後換算成明日收盤價並對齊合法升降單位（tick）。若需要的漲幅超過 10% 漲停限制，代表明天單日無法觸發。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q10：個股頁的「彈幕」是什麼？跟留言版有什麼不同？</h2>
+    <p>彈幕是<strong>每檔股票獨立</strong>的即時留言，會像影片彈幕一樣飄過個股分析頁面，可自選文字顏色、也可一鍵關閉顯示。側邊欄的「留言版」則是全站共用的意見板，適合回報問題或許願新功能。兩者皆為匿名。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q11：本站的資料來源是什麼？準確嗎？</h2>
+    <p>所有名單與股價均來自<a href="https://www.twse.com.tw/" target="_blank" rel="noopener">臺灣證券交易所</a>與<a href="https://www.tpex.org.tw/" target="_blank" rel="noopener">櫃買中心</a>的公開 API。本站的路線進度與觸發價為依公開規則之<strong>推算</strong>，實際認定以交易所電腦系統與官方公告為準，投資前請務必自行確認。</p>
+  </div>
+
+  <div class="card">
+    <h2>Q12：使用本站需要付費或註冊嗎？</h2>
+    <p>不用，本站為免費工具，查詢、彈幕與留言皆無需註冊。若有功能建議，歡迎在留言版告訴我們。</p>
+  </div>
+
+  <p class="foot-note">更多制度細節請見 <a href="/guide">注意股與處置股完整教學</a>。本頁內容僅供參考，不構成投資建議。</p>
+</div>
+</body>
+</html>
